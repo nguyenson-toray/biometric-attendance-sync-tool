@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd /home/sonnt/frappe-bench/apps/biometric-attendance-sync-tool
+venv/bin/python3 erpnext_sync.py &
+echo $! > erpnext_sync.pid
+echo "ERPNext sync service started with PID: $(cat erpnext_sync.pid)"
