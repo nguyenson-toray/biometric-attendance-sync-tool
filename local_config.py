@@ -1,26 +1,30 @@
-
+import datetime
 # ERPNext related configs
-# default values for ERPNext site, API Key and API Secret : erp.tiqn.local
-# Change  Server Name based on your ERPNext site
+
+ERPNEXT_VERSION = 15 
 SERVER_NAME = 'erp.tiqn.local' 
 ERPNEXT_API_KEY = '7c5bab33922d7f6'  
 ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
-ERPNEXT_VERSION = 15 
 
-# set config base on Server Name 
-# switch case to use different server name
-if SERVER_NAME == 'erp-sonnt.tiqn.local':
-    ERPNEXT_API_KEY = 'a95543fb2b16f44'
-    ERPNEXT_API_SECRET = 'fe27930bd546015'
-elif SERVER_NAME == 'erp-vinhnt.tiqn.local':
-    ERPNEXT_API_KEY = '30a5bc81106bdf9'
-    ERPNEXT_API_SECRET = 'c6345b4905ce725' 
 
-ERPNEXT_URL = f'http://${SERVER_NAME}'
+# Site Sonnt
+# SERVER_NAME = '10.0.1.21'
+# ERPNEXT_API_KEY = '7c5bab33922d7f6'
+# ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
+
+# Site Vinhnt
+# SERVER_NAME = 'erp-vinhnt.tiqn.local'
+# ERPNEXT_API_KEY = '30a5bc81106bdf9'
+# ERPNEXT_API_SECRET = 'c6345b4905ce725' 
+
+ERPNEXT_URL = f'http://{SERVER_NAME}'
+
+
+
 # operational configs
-PULL_FREQUENCY = 2 # in minutes
+PULL_FREQUENCY = 3 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
-IMPORT_START_DATE = '20250626' # format: '20190501' , Kỳ lương tháng 7/25
+IMPORT_START_DATE = '20250726' # format: '20190501' , Kỳ lương tháng 8/25
 
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
@@ -31,15 +35,39 @@ IMPORT_START_DATE = '20250626' # format: '20190501' , Kỳ lương tháng 7/25
     #- latitude - float, latitude of the location of the device
     #- longitude - float, longitude of the location of the device
 devices = [
-    {'device_id':'machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'machine_7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 ]
+# user_id_inorged - list of user IDs to be ignored / STRING : Tạp vụ
+user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005']
+# FingerID	Code	Name
+# 55	NK-01	NK-01-HT Hien
+# 58	NK-02	NK-02-NT Thao
+# 161	NK-03	NK-03-TTM Hoa
+# 623	NK-04	NK-04-NTN Thu
+# 916	NK-05	NK-05-NTT Vy
+# 920	NK-06	NK-06-NT Luon
+# 3000	NK-07	NK-07-TTM Hoa
+# 3001	NK-08	NK-08-TT Can
+# 3002	NK-09	NK-09-DT Yen
+# 6004	NK-10	NK-10-NT Can
+# 6005	NK-11	NK-11-DT Loan
 
+print(f'\n------------------ START AT {datetime.datetime.now()} ------------------')
+print(f'- ERPNext URL: {ERPNEXT_URL}')
+print(f'- ERPNext API Key: {ERPNEXT_API_KEY}')
+print(f'- ERPNext API Secret: {ERPNEXT_API_SECRET}')
+print(f'- Devices: {devices}')
+print(f'- Pull frequency: {PULL_FREQUENCY} minutes')
+print(f'- Logs directory: {LOGS_DIRECTORY}')
+print(f'- Import start date: {IMPORT_START_DATE}')
+print(f'- User IDs (Finger ID) to be ignored: {user_id_inorged}')
+print('------------------------------------------------------------------')
 # Configs updating sync timestamp in the Shift Type DocType 
 # please, read this thread to know why this is necessary https://discuss.erpnext.com/t/v-12-hr-auto-attendance-purpose-of-last-sync-of-checkin-in-shift-type/52997
 

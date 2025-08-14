@@ -128,6 +128,24 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
                 punch_direction = 'IN'
             else:
                 punch_direction = None
+        
+        # Check if user_id is in the ignored list
+        if device_attendance_log['user_id'] in config.user_id_inorged:
+            # Log to user_id_inorged_log.txt instead of sending to ERPNext
+            with open('/'.join([config.LOGS_DIRECTORY, 'user_id_inorged_log.txt']), 'a') as ignored_log:
+                ignored_log.write("\t".join([
+                    str(datetime.datetime.now()),
+                    "IGNORED",
+                    str(device_attendance_log['uid']),
+                    str(device_attendance_log['user_id']),
+                    str(device_attendance_log['timestamp'].timestamp()),
+                    str(device_attendance_log['punch']),
+                    str(device_attendance_log['status']),
+                    json.dumps(device_attendance_log, default=str)
+                ]) + "\n")
+            print(f"IGNORED: User ID {device_attendance_log['user_id']} - logged to user_id_inorged_log.txt at {datetime.datetime.now()}")
+            continue
+        
         erpnext_status_code, erpnext_message = send_to_erpnext(device_attendance_log['user_id'], device_attendance_log['timestamp'], device['device_id'], punch_direction, latitude=device['latitude'], longitude=device['longitude'])
         if erpnext_status_code == 200:
             attendance_success_logger.info("\t".join([erpnext_message, str(device_attendance_log['uid']),
@@ -135,10 +153,28 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
                 str(device_attendance_log['punch']), str(device_attendance_log['status']),
                 json.dumps(device_attendance_log, default=str)]))
         else:
-            attendance_failed_logger.error("\t".join([str(erpnext_status_code), str(device_attendance_log['uid']),
-                str(device_attendance_log['user_id']), str(device_attendance_log['timestamp'].timestamp()),
-                str(device_attendance_log['punch']), str(device_attendance_log['status']),
-                json.dumps(device_attendance_log, default=str)]))
+            # Check if it's a duplicate timestamp error
+            if "This employee already has a log with the same timestamp" in erpnext_message:
+                # Log to error_duplicate.log instead of failed log
+                with open('/'.join([config.LOGS_DIRECTORY, 'error_duplicate.log']), 'a') as duplicate_log:
+                    duplicate_log.write("\t".join([
+                        str(datetime.datetime.now()),
+                        "DUPLICATE",
+                        str(erpnext_status_code),
+                        str(device_attendance_log['uid']),
+                        str(device_attendance_log['user_id']),
+                        str(device_attendance_log['timestamp'].timestamp()),
+                        str(device_attendance_log['punch']),
+                        str(device_attendance_log['status']),
+                        json.dumps(device_attendance_log, default=str)
+                    ]) + "\n")
+                print(f"DUPLICATE: User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']} - logged to error_duplicate.log at {datetime.datetime.now()}")
+            else:
+                # Log other errors to normal failed log
+                attendance_failed_logger.error("\t".join([str(erpnext_status_code), str(device_attendance_log['uid']),
+                    str(device_attendance_log['user_id']), str(device_attendance_log['timestamp'].timestamp()),
+                    str(device_attendance_log['punch']), str(device_attendance_log['status']),
+                    json.dumps(device_attendance_log, default=str)]))
             if not(any(error in erpnext_message for error in allowlisted_errors)):
                 raise Exception('API Call to ERPNext Failed.')
 
@@ -208,11 +244,15 @@ def send_to_erpnext(employee_field_value, timestamp, device_id=None, log_type=No
         return 200, json.loads(response._content)['message']['name']
     else:
         error_str = _safe_get_error_str(response)
+        error_message = '\t'.join(['Error during ERPNext API Call.', str(employee_field_value), str(timestamp.timestamp()), str(device_id), str(log_type), error_str])
+        
         if EMPLOYEE_NOT_FOUND_ERROR_MESSAGE in error_str:
-            error_logger.error('\t'.join(['Error during ERPNext API Call.', str(employee_field_value), str(timestamp.timestamp()), str(device_id), str(log_type), error_str]))
+            error_logger.error(error_message)
+            print(f"ERROR: {datetime.datetime.now} : Employee not found - User ID: {employee_field_value}, Device: {device_id}")
             # TODO: send email?
         else:
-            error_logger.error('\t'.join(['Error during ERPNext API Call.', str(employee_field_value), str(timestamp.timestamp()), str(device_id), str(log_type), error_str]))
+            error_logger.error(error_message)
+            print(f"ERROR: {datetime.datetime.now}: ERPNext API Call failed - User ID: {employee_field_value}, Status: {response.status_code}, Error: {error_str[:100]}...")
         return response.status_code, error_str
 
 def update_shift_last_sync_timestamp(shift_type_device_mapping):
