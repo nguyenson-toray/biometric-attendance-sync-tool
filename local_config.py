@@ -2,15 +2,15 @@ import datetime
 # ERPNext related configs
 
 ERPNEXT_VERSION = 15 
-SERVER_NAME = 'erp.tiqn.local' 
-ERPNEXT_API_KEY = '7c5bab33922d7f6'  
-ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
+# SERVER_NAME = 'erp.tiqn.local' 
+# ERPNEXT_API_KEY = '7c5bab33922d7f6'  
+# ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
 
 
 # Site Sonnt
-# SERVER_NAME = '10.0.1.21'
-# ERPNEXT_API_KEY = '7c5bab33922d7f6'
-# ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
+SERVER_NAME = '10.0.1.21'
+ERPNEXT_API_KEY = '7c5bab33922d7f6'
+ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
 
 # Site Vinhnt
 # SERVER_NAME = 'erp-vinhnt.tiqn.local'
@@ -35,14 +35,18 @@ IMPORT_START_DATE = '20250726' # format: '20190501' , Kỳ lương tháng 8/25
     #- latitude - float, latitude of the location of the device
     #- longitude - float, longitude of the location of the device
 devices = [
-    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
+    # {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine_7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_8','ip':'10.0.1.48', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+     {'device_id':'Machine_10','ip':'10.0.1.50', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 ]
+devices_master =    {'device_id':'Machine_8','ip':'10.0.1.48', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
+
 # user_id_inorged - list of user IDs to be ignored / STRING : Tạp vụ
 user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005']
 # FingerID	Code	Name
