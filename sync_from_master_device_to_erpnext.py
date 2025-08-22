@@ -8,7 +8,7 @@ import local_config as config
 from zk import ZK
 import base64
 import logging
-import requests
+from erpnext_api_client import ERPNextAPIClient
 
 class MasterDeviceToERPNextSync:
     """Sync all fingerprint users from master device to ERPNext"""
@@ -16,6 +16,11 @@ class MasterDeviceToERPNextSync:
     def __init__(self):
         self.setup_logging()
         self.master_device = config.devices_master
+        self.erpnext_client = ERPNextAPIClient(
+            base_url=config.ERPNEXT_URL,
+            api_key=config.ERPNEXT_API_KEY,
+            api_secret=config.ERPNEXT_API_SECRET
+        )
         
     def setup_logging(self):
         """Setup logging"""
@@ -28,16 +33,11 @@ class MasterDeviceToERPNextSync:
         )
         self.logger = logging.getLogger(__name__)
         
-    def get_headers(self):
-        """Get API headers for ERPNext"""
-        return {
-            'Authorization': f'token {config.ERPNEXT_API_KEY}:{config.ERPNEXT_API_SECRET}',
-            'Content-Type': 'application/json'
-        }
         
-    def get_all_users_from_master_device(self):
+    def get_all_users_from_master_device(self, limit=None):
         """Get all users with fingerprints from master device"""
-        self.logger.info(f"🔍 Reading all users from master device...")
+        limit_text = f" (limit: {limit})" if limit else ""
+        self.logger.info(f"🔍 Reading users from master device{limit_text}...")
         self.logger.info(f"Master: {self.master_device['device_id']} ({self.master_device['ip']})")
         
         try:
@@ -59,6 +59,11 @@ class MasterDeviceToERPNextSync:
             users_with_fingerprints = []
             
             for i, user in enumerate(users):
+                # Check if we've reached the limit
+                if limit and len(users_with_fingerprints) >= limit:
+                    self.logger.info(f"  🔢 Reached limit of {limit} users with fingerprints, stopping scan")
+                    break
+                    
                 if i % 100 == 0:
                     self.logger.info(f"  Progress: {i}/{len(users)}")
                     
@@ -70,18 +75,22 @@ class MasterDeviceToERPNextSync:
                             template = conn.get_user_template(user.uid, finger_id)
                             if (template and hasattr(template, 'valid') and 
                                 template.valid and template.template and len(template.template) > 0):
-                                fingerprints.append({
-                                    'finger_index': finger_id,
-                                    'template_data': base64.b64encode(template.template).decode('utf-8')
-                                })
+                                template_data = base64.b64encode(template.template).decode('utf-8')
+                                # Skip empty or invalid template data
+                                if template_data and len(template_data.strip()) > 0:
+                                    fingerprints.append({
+                                        'finger_index': finger_id,
+                                        'template_data': template_data
+                                    })
                         except Exception:
                             # Skip individual finger errors
                             pass
                                 
+                    # Only include users with valid fingerprint data
                     if fingerprints:
                         user_data = {
                             'uid': user.uid,
-                            'user_id': user.user_id,  # This should match attendance_device_id in ERPNext
+                            'user_id': str(user.user_id),  # Ensure string for matching attendance_device_id
                             'name': user.name,
                             'privilege': user.privilege,
                             'password': user.password,
@@ -106,53 +115,50 @@ class MasterDeviceToERPNextSync:
             self.logger.error(f"❌ Error reading from master device: {str(e)}")
             return []
             
-    def find_employee_by_attendance_device_id(self, attendance_device_id):
-        """Find employee in ERPNext by attendance_device_id"""
+    def find_active_employee_by_attendance_device_id(self, attendance_device_id):
+        """Find active employee in ERPNext by attendance_device_id"""
         try:
-            url = f"{config.ERPNEXT_URL}/api/method/frappe.client.get_list"
+            endpoint = '/api/resource/Employee'
             params = {
-                'doctype': 'Employee',
-                'fields': '["name", "employee", "employee_name", "attendance_device_id"]',
-                'filters': f'[["attendance_device_id", "=", "{attendance_device_id}"]]',
+                'filters': f'[["attendance_device_id", "=", "{attendance_device_id}"], ["status", "=", "Active"]]',
+                'fields': '["name", "employee", "employee_name", "attendance_device_id", "status"]',
                 'limit_page_length': 1
             }
             
-            headers = self.get_headers()
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-            
-            if response.status_code != 200:
-                return None
-                
-            employees = response.json().get('message', [])
+            response = self.erpnext_client._make_request('GET', endpoint, params=params)
+            employees = response.get('data', [])
             if employees:
                 return employees[0]
             return None
             
         except Exception as e:
-            self.logger.error(f"Error finding employee with attendance_device_id {attendance_device_id}: {e}")
+            self.logger.error(f"Error finding active employee with attendance_device_id {attendance_device_id}: {e}")
             return None
             
     def save_fingerprints_to_employee(self, employee_name, fingerprints_data):
-        """Save fingerprint data to employee's custom_fingerprints child table"""
+        """Save fingerprint data to employee's custom_fingerprints child table using API client"""
         try:
-            # First, get the current employee document
-            url = f"{config.ERPNEXT_URL}/api/resource/Employee/{employee_name}"
-            headers = self.get_headers()
-            response = requests.get(url, headers=headers, timeout=15)
+            # Get the current employee document
+            endpoint = f'/api/resource/Employee/{employee_name}'
+            response = self.erpnext_client._make_request('GET', endpoint)
             
-            if response.status_code != 200:
+            if not response.get('data'):
                 return {"success": False, "message": f"Employee {employee_name} not found"}
                 
-            employee_doc = response.json().get('data', {})
+            employee_doc = response['data']
             
             # Clear existing fingerprints
             employee_doc['custom_fingerprints'] = []
             
-            # Add new fingerprints
+            # Add new fingerprints (only non-empty templates)
             for fp in fingerprints_data:
                 finger_index = fp['finger_index']
                 template_data = fp['template_data']
                 
+                # Skip empty template data
+                if not template_data or len(template_data.strip()) == 0:
+                    continue
+                    
                 # Get finger name from index
                 finger_name = self.get_finger_name(finger_index)
                 
@@ -166,20 +172,14 @@ class MasterDeviceToERPNextSync:
                 employee_doc['custom_fingerprints'].append(fingerprint_entry)
             
             # Update employee document
-            update_url = f"{config.ERPNEXT_URL}/api/resource/Employee/{employee_name}"
-            update_response = requests.put(update_url, headers=headers, json=employee_doc, timeout=30)
+            update_endpoint = f'/api/resource/Employee/{employee_name}'
+            self.erpnext_client._make_request('PUT', update_endpoint, data=employee_doc)
             
-            if update_response.status_code == 200:
-                return {
-                    "success": True, 
-                    "message": f"Saved {len(fingerprints_data)} fingerprints",
-                    "fingerprints_count": len(fingerprints_data)
-                }
-            else:
-                return {
-                    "success": False, 
-                    "message": f"Failed to update employee: HTTP {update_response.status_code}"
-                }
+            return {
+                "success": True, 
+                "message": f"Saved {len(employee_doc['custom_fingerprints'])} fingerprints",
+                "fingerprints_count": len(employee_doc['custom_fingerprints'])
+            }
                 
         except Exception as e:
             return {"success": False, "message": f"Error: {str(e)}"}
@@ -193,21 +193,21 @@ class MasterDeviceToERPNextSync:
         return finger_names.get(finger_index, f"Finger {finger_index}")
         
     def sync_user_to_erpnext(self, user_data):
-        """Sync single user from device to ERPNext"""
+        """Sync single user from device to ERPNext (Active employees only)"""
         user_id = user_data['user_id']
         user_name = user_data['name']
         fingerprints = user_data['fingerprints']
         
         try:
-            # Find corresponding employee in ERPNext
-            employee = self.find_employee_by_attendance_device_id(user_id)
+            # Find corresponding active employee in ERPNext
+            employee = self.find_active_employee_by_attendance_device_id(user_id)
             
             if not employee:
                 return {
                     "success": False,
                     "user_id": user_id,
                     "user_name": user_name,
-                    "message": f"No employee found with attendance_device_id: {user_id}"
+                    "message": f"No active employee found with attendance_device_id: {user_id}"
                 }
             
             # Save fingerprints to employee
@@ -231,13 +231,14 @@ class MasterDeviceToERPNextSync:
                 "message": f"Error: {str(e)}"
             }
             
-    def sync_all_users_to_erpnext(self):
+    def sync_all_users_to_erpnext(self, users_data=None):
         """Main sync function - sync all users from master device to ERPNext"""
         self.logger.info("🚀 Starting master device to ERPNext fingerprint sync...")
         self.logger.info(f"Master: {self.master_device['device_id']} ({self.master_device['ip']})")
         
-        # Get all users with fingerprints from master device
-        users_data = self.get_all_users_from_master_device()
+        # Get all users with fingerprints from master device if not provided
+        if users_data is None:
+            users_data = self.get_all_users_from_master_device()
         
         if not users_data:
             self.logger.error("❌ No users with fingerprints found on master device")
@@ -276,7 +277,7 @@ class MasterDeviceToERPNextSync:
         self.logger.info(f"Total users found on device: {total_users}")
         self.logger.info(f"Users processed: {processed_users}")
         self.logger.info(f"Users successfully synced to ERPNext: {successful_users}")
-        self.logger.info(f"Users skipped (no matching employee): {processed_users - successful_users}")
+        self.logger.info(f"Users skipped (no matching active employee): {processed_users - successful_users}")
         
         success_rate = (successful_users / total_users * 100) if total_users > 0 else 0
         self.logger.info(f"Success rate: {success_rate:.1f}%")
@@ -302,21 +303,15 @@ def main():
     
     sync_manager = MasterDeviceToERPNextSync()
     
-    # Get users first to show count
-    users = sync_manager.get_all_users_from_master_device()
+    # Get users with limit applied during device reading
+    users = sync_manager.get_all_users_from_master_device(limit=args.limit)
     
     if not users:
         print("❌ No users with fingerprints found")
         return 1
         
-    if args.limit:
-        users = users[:args.limit]
-        print(f"🔢 Limited to {len(users)} users for testing")
-        
-    # Temporarily modify the sync manager's data  
-    sync_manager.get_all_users_from_master_device = lambda: users
-    
-    success = sync_manager.sync_all_users_to_erpnext()
+    # Pass the users data directly to avoid double reading from device
+    success = sync_manager.sync_all_users_to_erpnext(users_data=users)
     
     return 0 if success else 1
 

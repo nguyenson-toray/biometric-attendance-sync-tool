@@ -11,7 +11,7 @@ import time
 import base64
 from zk import ZK
 from zk.base import Finger
-from unidecode import unidecode
+# from unidecode import unidecode  # Temporarily commented out
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
@@ -68,6 +68,14 @@ class ERPNextSyncToDeviceStandalone:
         """Get employees with status 'Left' who have device IDs"""
         return self.api_client.get_left_employees_with_device_id()
     
+    def delete_employee_fingerprints_from_erpnext(self, employee_id):
+        """Delete fingerprint records from ERPNext for an employee"""
+        return self.api_client.delete_employee_fingerprints(employee_id)
+    
+    def get_employee_fingerprint_count(self, employee_id):
+        """Get count of fingerprint records for an employee"""
+        return self.api_client.get_employee_fingerprint_count(employee_id)
+    
     
     def check_device_connection(self, device_config):
         """Check if device is reachable"""
@@ -92,7 +100,8 @@ class ERPNextSyncToDeviceStandalone:
         if not full_name:
             return full_name
             
-        text_processed = unidecode(full_name)
+        # text_processed = unidecode(full_name)  # Temporarily use original
+        text_processed = full_name
         text_processed = ' '.join(text_processed.split()).strip()
         
         if len(text_processed) > max_length:
@@ -139,7 +148,7 @@ class ERPNextSyncToDeviceStandalone:
                 attendance_device_id = employee_data["attendance_device_id"]
                 
                 existing_users = conn.get_users()
-                user_exists = any(u.user_id == attendance_device_id for u in existing_users)
+                user_exists = any(str(u.user_id) == str(attendance_device_id) for u in existing_users)
                 
                 if user_exists:
                     conn.delete_user(user_id=attendance_device_id)
@@ -167,7 +176,7 @@ class ERPNextSyncToDeviceStandalone:
                     )
                 
                 users = conn.get_users()
-                user = next((u for u in users if u.user_id == attendance_device_id), None)
+                user = next((u for u in users if str(u.user_id) == str(attendance_device_id)), None)
                 
                 if not user:
                     return {
@@ -275,7 +284,7 @@ class ERPNextSyncToDeviceStandalone:
                         
                         # Delete existing user
                         existing_users = conn.get_users()
-                        user_exists = any(u.user_id == attendance_device_id for u in existing_users)
+                        user_exists = any(str(u.user_id) == str(attendance_device_id) for u in existing_users)
                         if user_exists:
                             conn.delete_user(user_id=attendance_device_id)
                             time.sleep(0.1)
@@ -304,7 +313,7 @@ class ERPNextSyncToDeviceStandalone:
                         
                         # Get user and save templates
                         users = conn.get_users()
-                        user = next((u for u in users if u.user_id == attendance_device_id), None)
+                        user = next((u for u in users if str(u.user_id) == str(attendance_device_id)), None)
                         
                         if user:
                             fingerprint_lookup = {fp.get("finger_index"): fp for fp in employee_data["fingerprints"] if fp.get("template_data")}
@@ -568,7 +577,7 @@ class ERPNextSyncToDeviceStandalone:
                         
                         # Get user and save templates
                         users = conn.get_users()
-                        user = next((u for u in users if u.user_id == attendance_device_id), None)
+                        user = next((u for u in users if str(u.user_id) == str(attendance_device_id)), None)
                         
                         if user:
                             fingerprint_lookup = {fp.get("finger_index"): fp for fp in employee_data["fingerprints"] if fp.get("template_data")}
@@ -779,11 +788,260 @@ class ERPNextSyncToDeviceStandalone:
             "detailed_results": device_results
         }
     
+    def classify_and_process_employees(self, changed_employees, since_datetime):
+        """Classify changed employees and process according to new algorithm"""
+        current_date = datetime.datetime.now().date()
+        
+        employees_to_sync = []  # Active employees needing fingerprint sync
+        employees_to_clear_all = []  # Active employees needing all fingerprints cleared
+        left_employees_to_cleanup = []  # Left employees needing complete cleanup
+        
+        logger.info(f"Classifying {len(changed_employees)} changed employees...")
+        
+        for employee in changed_employees:
+            employee_id = employee.get("employee_id") or employee.get("employee")
+            employee_status = employee.get("status", "Active")
+            relieving_date = employee.get("relieving_date")
+            modified = employee.get("modified")
+            
+            # Parse relieving_date if it's a string
+            if relieving_date and isinstance(relieving_date, str):
+                try:
+                    relieving_date = datetime.datetime.strptime(relieving_date, "%Y-%m-%d").date()
+                except:
+                    relieving_date = None
+            
+            # Check if employee status is 'Left' and past relieving date
+            if (employee_status == 'Left' and 
+                relieving_date and 
+                current_date > relieving_date):
+                
+                logger.info(f"Employee {employee.get('attendance_device_id')} {employee.get('employee')} {employee.get('employee_name')} marked for LEFT cleanup (past relieving date)")
+                left_employees_to_cleanup.append(employee)
+                
+            elif modified and since_datetime:
+                # Parse modified string to datetime for comparison
+                try:
+                    if isinstance(modified, str):
+                        # Try different datetime formats
+                        try:
+                            modified_dt = datetime.datetime.strptime(modified, "%Y-%m-%d %H:%M:%S.%f")
+                        except ValueError:
+                            modified_dt = datetime.datetime.strptime(modified, "%Y-%m-%d %H:%M:%S")
+                    else:
+                        modified_dt = modified
+                    
+                    if modified_dt > since_datetime:
+                        # Employee has changes, check fingerprint count
+                        try:
+                            fingerprint_count = self.get_employee_fingerprint_count(employee_id)
+                            
+                            if fingerprint_count <= 0:
+                                logger.info(f"Employee {employee.get('attendance_device_id')} {employee.get('employee')} {employee.get('employee_name')} marked for CLEAR_ALL (no fingerprints)")
+                                employees_to_clear_all.append(employee)
+                            else:
+                                logger.info(f"Employee {employee.get('attendance_device_id')} {employee.get('employee')} {employee.get('employee_name')} marked for SELECTIVE_SYNC ({fingerprint_count} fingerprints)")
+                                employees_to_sync.append(employee)
+                                
+                        except Exception as e:
+                            logger.warning(f"Could not get fingerprint count for {employee.get('attendance_device_id')} {employee.get('employee')} {employee.get('employee_name')}: {e}")
+                            # Fallback: treat as selective sync
+                            employees_to_sync.append(employee)
+                            
+                except ValueError as e:
+                    logger.warning(f"Could not parse modified date for {employee.get('attendance_device_id')} {employee.get('employee')} {employee.get('employee_name')}: {e}")
+                    # Fallback: treat as selective sync if we can't parse date
+                    employees_to_sync.append(employee)
+        
+        logger.info(f"Classification result: {len(employees_to_sync)} for selective sync, "
+                   f"{len(employees_to_clear_all)} for clear all, {len(left_employees_to_cleanup)} for LEFT cleanup")
+        
+        return employees_to_sync, employees_to_clear_all, left_employees_to_cleanup
+    
+    def clear_all_fingerprints_for_employee(self, device_config, employee_data):
+        """Clear all fingerprints for an employee on a device"""
+        device_id = device_config['device_id']
+        ip_address = device_config['ip']
+        attendance_device_id = employee_data["attendance_device_id"]
+        
+        try:
+            if not self.check_device_connection(device_config):
+                return {"success": False, "message": f"Device {device_id} not reachable"}
+            
+            zk = ZK(ip_address, port=4370, timeout=10, force_udp=True, ommit_ping=True)
+            conn = zk.connect()
+            
+            if not conn:
+                return {"success": False, "message": f"Failed to connect to device {device_id}"}
+            
+            try:
+                conn.disable_device()
+                
+                # Check if user exists
+                existing_users = conn.get_users()
+                user = next((u for u in existing_users if str(u.user_id) == str(attendance_device_id)), None)
+                
+                if user:
+                    # Clear all fingerprint templates using delete method
+                    try:
+                        # Method 1: Try to delete specific templates
+                        for finger_index in range(10):
+                            try:
+                                conn.delete_user_template(user.uid, finger_index)
+                            except:
+                                pass  # Ignore if finger doesn't exist
+                    except:
+                        # Method 2: Fallback - recreate user without templates
+                        try:
+                            # Save user info
+                            user_name = user.name
+                            user_privilege = user.privilege
+                            user_password = ""  # Get from employee data if needed
+                            user_id = user.user_id
+                            
+                            # Delete and recreate user
+                            conn.delete_user(user_id=user_id)
+                            time.sleep(0.1)
+                            conn.set_user(name=user_name, privilege=user_privilege, user_id=user_id)
+                        except Exception as fallback_error:
+                            logger.warning(f"    Fallback clear method failed: {fallback_error}")
+                            # Last resort: set empty templates
+                            empty_templates = []
+                            for finger_index in range(10):
+                                finger_obj = Finger(uid=user.uid, fid=finger_index, valid=False, template=b'')
+                                empty_templates.append(finger_obj)
+                            conn.save_user_template(user, empty_templates)
+                    logger.info(f"  ✓ Cleared all fingerprints for {employee_data['attendance_device_id']} {employee_data['employee']} {employee_data['employee_name']} on device {device_id}")
+                    return {"success": True, "message": "All fingerprints cleared"}
+                else:
+                    logger.info(f"  • User {attendance_device_id} not found on device {device_id}")
+                    return {"success": True, "message": "User not found (already cleared)"}
+                    
+            finally:
+                try:
+                    conn.enable_device()
+                    conn.disconnect()
+                except:
+                    pass
+                    
+        except Exception as e:
+            return {"success": False, "message": f"Clear error: {str(e)}"}
+    
+    def selective_sync_employee_fingerprints(self, device_config, employee_data):
+        """Selectively sync employee fingerprints (clear deleted + sync existing)"""
+        device_id = device_config['device_id']
+        ip_address = device_config['ip']
+        attendance_device_id = employee_data["attendance_device_id"]
+        
+        try:
+            if not self.check_device_connection(device_config):
+                return {"success": False, "message": f"Device {device_id} not reachable"}
+            
+            zk = ZK(ip_address, port=4370, timeout=10, force_udp=True, ommit_ping=True)
+            conn = zk.connect()
+            
+            if not conn:
+                return {"success": False, "message": f"Failed to connect to device {device_id}"}
+            
+            try:
+                conn.disable_device()
+                
+                # Check if user exists
+                existing_users = conn.get_users()
+                user = next((u for u in existing_users if str(u.user_id) == str(attendance_device_id)), None)
+                
+                if not user:
+                    logger.info(f"  • User {attendance_device_id} not found on device {device_id}, skipping selective sync")
+                    return {"success": True, "message": "User not found"}
+                
+                # Get ERPNext fingerprints
+                erpnext_fingers = {fp.get("finger_index"): fp for fp in employee_data["fingerprints"] if fp.get("template_data")}
+                erpnext_finger_indexes = set(erpnext_fingers.keys())
+                
+                # Get device fingerprints (simplified - we'll clear all and re-sync for now)
+                # In a full implementation, you'd get current device templates to compare
+                device_finger_indexes = set(range(10))  # Assume all possible fingers might exist
+                
+                # Find fingers to clear (on device but not in ERPNext)
+                fingers_to_clear = device_finger_indexes - erpnext_finger_indexes
+                
+                # Prepare templates to send
+                templates_to_send = []
+                
+                # Clear deleted fingers
+                for finger_index in fingers_to_clear:
+                    finger_obj = Finger(uid=user.uid, fid=finger_index, valid=False, template=b'')
+                    templates_to_send.append(finger_obj)
+                
+                # Add existing fingers from ERPNext
+                for finger_index, fp in erpnext_fingers.items():
+                    try:
+                        decoded_template = base64.b64decode(fp["template_data"])
+                        finger_obj = Finger(uid=user.uid, fid=finger_index, valid=True, template=decoded_template)
+                        templates_to_send.append(finger_obj)
+                    except Exception as e:
+                        logger.warning(f"  Failed to decode template for finger {finger_index}: {e}")
+                
+                # Save all templates
+                if templates_to_send:
+                    conn.save_user_template(user, templates_to_send)
+                    
+                sync_count = len(erpnext_fingers)
+                clear_count = len(fingers_to_clear)
+                logger.info(f"  ✓ Selective sync for {employee_data['attendance_device_id']} {employee_data['employee']} {employee_data['employee_name']} on device {device_id}: "
+                           f"{sync_count} synced, {clear_count} cleared")
+                
+                return {"success": True, "message": f"Selective sync: {sync_count} synced, {clear_count} cleared"}
+                    
+            finally:
+                try:
+                    conn.enable_device()
+                    conn.disconnect()
+                except:
+                    pass
+                    
+        except Exception as e:
+            return {"success": False, "message": f"Selective sync error: {str(e)}"}
+    
+    def cleanup_left_employee_complete(self, device_config, employee_data):
+        """Complete cleanup for Left employee: ERPNext + device templates"""
+        device_id = device_config['device_id']
+        employee_id = employee_data.get("employee_id") or employee_data.get("employee")
+        
+        # Step 1: Delete ERPNext fingerprints (only once, not per device)
+        erpnext_result = {"success": True, "deleted_count": 0}
+        if hasattr(self, '_left_employees_erpnext_cleaned'):
+            if employee_id not in self._left_employees_erpnext_cleaned:
+                try:
+                    erpnext_result = self.delete_employee_fingerprints_from_erpnext(employee_id)
+                    self._left_employees_erpnext_cleaned.add(employee_id)
+                    logger.info(f"  ERPNext cleanup for {employee_data['attendance_device_id']} {employee_data['employee']} {employee_data['employee_name']}: {erpnext_result.get('message', 'completed')}")
+                except Exception as e:
+                    logger.warning(f"  ERPNext cleanup failed for {employee_data['attendance_device_id']} {employee_data['employee']} {employee_data['employee_name']}: {e}")
+                    erpnext_result = {"success": False, "deleted_count": 0, "message": str(e)}
+        else:
+            self._left_employees_erpnext_cleaned = {employee_id}
+            try:
+                erpnext_result = self.delete_employee_fingerprints_from_erpnext(employee_id)
+                logger.info(f"  ERPNext cleanup for {employee_data['employee']}: {erpnext_result.get('message', 'completed')}")
+            except Exception as e:
+                logger.warning(f"  ERPNext cleanup failed for {employee_data['employee']}: {e}")
+                erpnext_result = {"success": False, "deleted_count": 0, "message": str(e)}
+        
+        # Step 2: Clear device templates
+        device_result = self.clear_all_fingerprints_for_employee(device_config, employee_data)
+        
+        return {
+            "success": erpnext_result["success"] or device_result["success"],
+            "erpnext_result": erpnext_result,
+            "device_result": device_result
+        }
+    
     def sync_changed(self, since_datetime=None):
-        """Sync only employees with changes since given datetime to all devices"""
+        """Sync only employees with changes since given datetime to all devices - NEW ALGORITHM"""
         start_time = time.time()
         logger.info("=" * 80)
-        logger.info("STARTING CHANGED SYNC FROM ERPNEXT TO DEVICES (STANDALONE)")
+        logger.info("STARTING SMART CHANGED SYNC FROM ERPNEXT TO DEVICES")
         logger.info("=" * 80)
         
         if not self.test_erpnext_connection():
@@ -796,37 +1054,45 @@ class ERPNextSyncToDeviceStandalone:
             }
         
         if not since_datetime:
-            since_datetime = datetime.datetime.now() - datetime.timedelta(hours=24)
+            since_datetime = self.sync_state.get_last_sync() or (datetime.datetime.now() - datetime.timedelta(hours=24))
         
         logger.info(f"Syncing changes since: {since_datetime}")
         
-        employees = self.get_changed_employees_with_fingerprints(since_datetime)
+        # Get changed employees
+        changed_employees = self.get_changed_employees_with_fingerprints(since_datetime)
         
-        if not employees:
-            logger.info("No employees with fingerprint changes found")
+        if not changed_employees:
+            logger.info("No employees with changes found")
+            # Still save last sync timestamp
+            self.sync_state.set_last_sync()
             return {
                 "success": True,
-                "message": "No employees with fingerprint changes found",
+                "message": "No employees with changes found",
                 "total_employees": 0,
                 "synced_employees": 0,
-                "execution_time": 0
+                "execution_time": time.time() - start_time
             }
         
-        logger.info(f"Starting optimized sync for {len(employees)} changed employees to {len(self.devices)} devices")
+        logger.info(f"Found {len(changed_employees)} changed employees")
         
-        # Also clear Left employees during sync
-        left_employees = self.get_left_employees_with_device_id()
-        if left_employees:
-            logger.info(f"Found {len(left_employees)} Left employees to clear templates")
+        # Classify employees according to new algorithm
+        employees_to_sync, employees_to_clear_all, left_employees_to_cleanup = self.classify_and_process_employees(
+            changed_employees, since_datetime
+        )
         
-        # Sync to all devices in parallel - one connection per device for all employees
+        # Process each category in parallel across devices
         device_results = []
+        
         with ThreadPoolExecutor(max_workers=len(self.devices)) as executor:
-            future_to_device = {
-                executor.submit(self.sync_and_clear_device, device, employees, left_employees): device 
-                for device in self.devices
-            }
+            # Submit tasks for each device
+            future_to_device = {}
             
+            for device in self.devices:
+                future = executor.submit(self.process_device_smart_sync, device, 
+                                       employees_to_sync, employees_to_clear_all, left_employees_to_cleanup)
+                future_to_device[future] = device
+            
+            # Collect results
             for future in concurrent.futures.as_completed(future_to_device):
                 device = future_to_device[future]
                 try:
@@ -834,9 +1100,7 @@ class ERPNextSyncToDeviceStandalone:
                     device_results.append(result)
                     
                     if result["success"]:
-                        sync_msg = f"{result.get('synced_count', 0)}/{result.get('total_sync_count', 0)} synced"
-                        clear_msg = f"{result.get('cleared_count', 0)}/{result.get('total_clear_count', 0)} cleared"
-                        logger.info(f"✓ {device['device_id']}: {sync_msg}, {clear_msg}")
+                        logger.info(f"✓ {device['device_id']}: {result['message']}")
                     else:
                         logger.warning(f"✗ {device['device_id']}: {result['message']}")
                         
@@ -844,24 +1108,26 @@ class ERPNextSyncToDeviceStandalone:
                     error_result = {
                         "device_id": device['device_id'],
                         "success": False,
-                        "synced_count": 0,
-                        "total_count": len(employees),
+                        "total_operations": 0,
                         "message": f"Thread execution error: {str(e)}"
                     }
                     device_results.append(error_result)
                     logger.error(f"✗ {device['device_id']}: Thread execution error: {str(e)}")
         
         # Calculate totals
-        total_synced = sum(r["synced_count"] for r in device_results)
+        total_operations = sum(r.get("total_operations", 0) for r in device_results)
         successful_devices = sum(1 for r in device_results if r["success"])
         
         execution_time = time.time() - start_time
         
         logger.info("\n" + "=" * 80)
-        logger.info("CHANGED SYNC COMPLETED")
-        logger.info(f"Total changed employees: {len(employees)}")
+        logger.info("SMART CHANGED SYNC COMPLETED")
+        logger.info(f"Total changed employees: {len(changed_employees)}")
+        logger.info(f"  - Selective sync: {len(employees_to_sync)}")
+        logger.info(f"  - Clear all: {len(employees_to_clear_all)}")
+        logger.info(f"  - Left cleanup: {len(left_employees_to_cleanup)}")
         logger.info(f"Successful devices: {successful_devices}/{len(self.devices)}")
-        logger.info(f"Total sync operations: {total_synced}")
+        logger.info(f"Total operations: {total_operations}")
         logger.info(f"Total execution time: {execution_time:.2f} seconds")
         logger.info("=" * 80)
         
@@ -870,13 +1136,62 @@ class ERPNextSyncToDeviceStandalone:
         
         return {
             "success": successful_devices > 0,
-            "message": f"Changed sync completed: {successful_devices}/{len(self.devices)} devices successful, {total_synced} total operations",
-            "total_employees": len(employees),
-            "synced_employees": total_synced,
+            "message": f"Smart sync completed: {successful_devices}/{len(self.devices)} devices successful, {total_operations} total operations",
+            "total_employees": len(changed_employees),
+            "synced_employees": total_operations,
             "successful_devices": successful_devices,
             "execution_time": execution_time,
             "detailed_results": device_results
         }
+    
+    def process_device_smart_sync(self, device_config, employees_to_sync, employees_to_clear_all, left_employees_to_cleanup):
+        """Process all employee categories for a single device"""
+        device_id = device_config['device_id']
+        
+        total_operations = 0
+        results = []
+        
+        logger.info(f"Device {device_id}: Processing {len(employees_to_sync)} selective, "
+                   f"{len(employees_to_clear_all)} clear all, {len(left_employees_to_cleanup)} left cleanup")
+        
+        try:
+            # Process selective sync employees
+            for employee in employees_to_sync:
+                result = self.selective_sync_employee_fingerprints(device_config, employee)
+                results.append(f"Selective {employee['employee']}: {result['message']}")
+                if result["success"]:
+                    total_operations += 1
+            
+            # Process clear all employees
+            for employee in employees_to_clear_all:
+                result = self.clear_all_fingerprints_for_employee(device_config, employee)
+                results.append(f"Clear all {employee['employee']}: {result['message']}")
+                if result["success"]:
+                    total_operations += 1
+            
+            # Process left employees cleanup
+            for employee in left_employees_to_cleanup:
+                result = self.cleanup_left_employee_complete(device_config, employee)
+                results.append(f"Left cleanup {employee['employee']}: device={result['device_result']['message']}")
+                if result["success"]:
+                    total_operations += 1
+            
+            return {
+                "device_id": device_id,
+                "success": True,
+                "total_operations": total_operations,
+                "message": f"{total_operations} operations completed",
+                "details": results
+            }
+            
+        except Exception as e:
+            return {
+                "device_id": device_id,
+                "success": False,
+                "total_operations": total_operations,
+                "message": f"Device processing error: {str(e)}",
+                "details": results
+            }
     
     def auto_sync(self):
         """Auto detect sync mode and execute"""

@@ -61,7 +61,7 @@ cd "$SCRIPT_DIR" || exit 1
 print_info "Starting ERPNext to Device Sync (Auto Mode)"
 print_info "Log file: $LOG_FILE"
 
-# Execute sync
+# Execute sync 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting auto sync" >> "$LOG_FILE"
 
 $PYTHON_PATH "$SCRIPT_PATH" 2>&1

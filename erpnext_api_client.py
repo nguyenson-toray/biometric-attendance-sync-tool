@@ -33,6 +33,10 @@ class ERPNextAPIClient:
                 response = self.session.get(url, params=params, timeout=30)
             elif method.upper() == 'POST':
                 response = self.session.post(url, json=data, timeout=30)
+            elif method.upper() == 'PUT':
+                response = self.session.put(url, json=data, timeout=30)
+            elif method.upper() == 'DELETE':
+                response = self.session.delete(url, timeout=30)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
@@ -151,11 +155,10 @@ class ERPNextAPIClient:
             endpoint = '/api/resource/Employee'
             params = {
                 'filters': json.dumps({
-                    "status": "Active",
                     "modified": [">=", since_str]
                 }),
                 'fields': json.dumps(["name", "employee", "employee_name", "attendance_device_id", 
-                                    "custom_privilege", "custom_password", "status", "modified"]),
+                                    "custom_privilege", "custom_password", "status", "modified", "relieving_date"]),
                 'limit_page_length': 0
             }
             
@@ -170,29 +173,32 @@ class ERPNextAPIClient:
                 
                 fingerprints = self.get_fingerprint_data(emp['name'])
                 
-                if fingerprints:
-                    privilege_str = emp.get('custom_privilege', 'USER_DEFAULT')
-                    try:
-                        from zk import const
-                        privilege = const.USER_ADMIN if privilege_str == "USER_ADMIN" else const.USER_DEFAULT
-                    except ImportError:
-                        privilege = 14 if privilege_str == "USER_ADMIN" else 0
-                    
-                    password_int = emp.get('custom_password')
-                    password = str(password_int) if password_int and password_int != 0 else ""
-                    
-                    employee_data = {
-                        "employee_id": emp['name'],
-                        "employee": emp['employee'],
-                        "employee_name": emp['employee_name'],
-                        "attendance_device_id": emp['attendance_device_id'],
-                        "password": password,
-                        "privilege": privilege,
-                        "privilege_str": privilege_str,
-                        "fingerprints": fingerprints
-                    }
-                    
-                    employees_with_fingerprints.append(employee_data)
+                # FIXED: Include employee even if fingerprints is empty (deleted case)
+                privilege_str = emp.get('custom_privilege', 'USER_DEFAULT')
+                try:
+                    from zk import const
+                    privilege = const.USER_ADMIN if privilege_str == "USER_ADMIN" else const.USER_DEFAULT
+                except ImportError:
+                    privilege = 14 if privilege_str == "USER_ADMIN" else 0
+                
+                password_int = emp.get('custom_password')
+                password = str(password_int) if password_int and password_int != 0 else ""
+                
+                employee_data = {
+                    "employee_id": emp['name'],
+                    "employee": emp['employee'],
+                    "employee_name": emp['employee_name'],
+                    "attendance_device_id": emp['attendance_device_id'],
+                    "password": password,
+                    "privilege": privilege,
+                    "privilege_str": privilege_str,
+                    "fingerprints": fingerprints,  # Can be empty for deleted fingerprints
+                    "status": emp.get('status', 'Active'),
+                    "modified": emp.get('modified'),
+                    "relieving_date": emp.get('relieving_date')
+                }
+                
+                employees_with_fingerprints.append(employee_data)
             
             logger.info(f"Fallback method found {len(employees_with_fingerprints)} employees with changes")
             return employees_with_fingerprints
@@ -331,6 +337,20 @@ class ERPNextAPIClient:
                 "deleted_count": 0,
                 "message": f"Error deleting fingerprints: {str(e)}"
             }
+    
+    def get_employee_fingerprint_count(self, employee_id):
+        """Get count of fingerprint records for an employee - using Employee record method"""
+        try:
+            # Use fallback method directly since we know direct access returns 403
+            # This avoids unnecessary error logs while maintaining functionality
+            fingerprints = self.get_fingerprint_data(employee_id)
+            count = len([fp for fp in fingerprints if fp.get('template_data')])
+            logger.debug(f"Employee {employee_id} has {count} fingerprint records")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error getting fingerprint count for employee {employee_id}: {str(e)}")
+            return 0
 
     def test_connection(self):
         """Test API connection"""

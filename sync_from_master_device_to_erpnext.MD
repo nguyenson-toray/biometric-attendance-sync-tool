@@ -4,14 +4,15 @@
 
 ## 📋 Mô tả chức năng
 
-Hệ thống này đọc tất cả user và dữ liệu vân tay từ thiết bị master, tìm employee tương ứng trong ERPNext theo `attendance_device_id`, và lưu fingerprint templates vào `custom_fingerprints` child table.
+Hệ thống này đọc tất cả user và dữ liệu vân tay từ thiết bị master, tìm employee tương ứng trong ERPNext theo `attendance_device_id` (chỉ Active employees), và lưu fingerprint templates vào `custom_fingerprints` child table.
 
 ### ⚡ Tính năng chính:
 - ✅ **Đọc từ Master Device**: Scan tất cả users và fingerprints từ thiết bị master  
-- ✅ **ERPNext Integration**: Tìm employee theo attendance_device_id
+- ✅ **ERPNext API Client**: Sử dụng erpnext_api_client để chuẩn hóa API calls
+- ✅ **Active Employee Only**: Chỉ sync vào employees có trạng thái Active
 - ✅ **Template Storage**: Lưu vào custom_fingerprints child table với cấu trúc chuẩn
 - ✅ **Finger Name Mapping**: Map finger_index thành finger_name (Left Thumb, Right Index, etc.)
-- ✅ **Data Validation**: Chỉ lưu templates hợp lệ, bỏ qua templates rỗng
+- ✅ **Enhanced Data Validation**: Chỉ lưu templates hợp lệ, bỏ qua templates rỗng hoặc không hợp lệ
 - ✅ **Progress Tracking**: Hiển thị tiến độ và kết quả chi tiết
 - ✅ **Comprehensive Logging**: Log chi tiết với shell script wrapper
 
@@ -21,16 +22,40 @@ Hệ thống này đọc tất cả user và dữ liệu vân tay từ thiết b
 biometric-attendance-sync-tool/
 ├── sync_from_master_device_to_erpnext.py        # Core sync script
 ├── sync_from_master_device_to_erpnext.sh        # Shell script với logging  
+├── erpnext_api_client.py                        # ERPNext API Client
 ├── sync_from_erpnext_to_device.py              # Script tích hợp (có --mode from-device)
 ├── local_config.py                              # Configuration
+├── venv/                                        # Virtual environment (required)
+│   ├── bin/python                               # Python binary
+│   └── lib/python*/site-packages/               # Installed packages
 └── logs/                                        # Log directory
-    ├── sync_master_device_to_erpnext.log        # Main log
-    └── sync_master_device_to_erpnext_error.log  # Error log
+    └── sync_from_master_device_to_erpnext/      # Sync-specific log folder
+        ├── sync_master_device_to_erpnext.log        # Main log
+        └── sync_master_device_to_erpnext_error.log  # Error log
 ```
 
-## ⚙️ Cấu hình
+## ⚙️ Thiết lập môi trường
 
-### local_config.py
+### 1. Tạo Virtual Environment (Bắt buộc)
+
+```bash
+# Tạo virtual environment
+python3 -m venv venv
+
+# Kích hoạt virtual environment
+source venv/bin/activate  # Linux/macOS
+# hoặc: venv\Scripts\activate  # Windows
+
+# Cài đặt các packages cần thiết
+pip install pyzk requests
+
+# Kiểm tra cài đặt
+python -c "import pyzk, requests; print('All packages installed successfully')"
+```
+
+### 2. Cấu hình
+
+#### local_config.py
 ```python
 # ERPNext connection
 ERPNEXT_URL = "http://10.0.1.21"
@@ -49,11 +74,12 @@ devices_master = {
 ### ERPNext Employee Structure
 ```
 Employee doctype cần có:
+- status: Must be "Active" (chỉ sync vào Active employees)
 - attendance_device_id: Matching với user_id trên device
 - custom_fingerprints: Child table với structure:
   * finger_index: 0-9
   * finger_name: Left Thumb, Right Index, etc.
-  * template_data: Base64 encoded fingerprint template
+  * template_data: Base64 encoded fingerprint template (skip nếu rỗng)
   * quality_score: Mặc định là 0
 ```
 
@@ -61,8 +87,10 @@ Employee doctype cần có:
 
 ### 1. Shell Script (Khuyến khích)
 
+**Lưu ý**: Shell script tự động sử dụng virtual environment `./venv`
+
 ```bash
-# Sync tất cả users từ master device lên ERPNext
+# Sync tất cả users từ master device lên ERPNext (chỉ Active employees)
 ./sync_from_master_device_to_erpnext.sh
 
 # Sync với verbose output
@@ -81,11 +109,17 @@ Employee doctype cần có:
 ### 2. Python Script trực tiếp
 
 ```bash
+# Kích hoạt virtual environment trước
+source venv/bin/activate
+
 # Sync tất cả users
 python sync_from_master_device_to_erpnext.py
 
 # Sync với giới hạn
 python sync_from_master_device_to_erpnext.py --limit 5
+
+# Hoặc chạy trực tiếp với venv (không cần activate)
+venv/bin/python sync_from_master_device_to_erpnext.py
 ```
 
 ### 3. Script tích hợp
@@ -114,7 +148,7 @@ Master: Machine_8 (10.0.1.48)
 Progress: 1/200 - 161: Truong Thi My Hoa (4 fingerprints)
   ✅ Synced to ERPNext: TIQN-0161 - Truong Thi My Hoa (4 fingerprints)
 Progress: 2/200 - 295: Nguyen Thi Thuong (2 fingerprints)
-  ⚠️ Skipped: No employee found with attendance_device_id: 295
+  ⚠️ Skipped: No active employee found with attendance_device_id: 295
 ```
 
 ### 3. Kết quả cuối cùng
@@ -123,7 +157,7 @@ Progress: 2/200 - 295: Nguyen Thi Thuong (2 fingerprints)
 Total users found on device: 200
 Users processed: 200
 Users successfully synced to ERPNext: 150
-Users skipped (no matching employee): 50
+Users skipped (no matching active employee): 50
 Success rate: 75.0%
 ⚠️ Partial success: 150/200 users synced
 ```
@@ -181,27 +215,41 @@ finger_names = {
 
 ### Các lỗi phổ biến:
 
-1. **No employee found with attendance_device_id**
+1. **Virtual environment not found**
    ```
-   ⚠️ Skipped: No employee found with attendance_device_id: 295
+   ERROR Virtual environment not found: ./venv
+   ```
+   - Tạo virtual environment: `python3 -m venv venv`
+   - Cài packages: `venv/bin/pip install pyzk requests`
+
+2. **Python modules not available**
+   ```
+   WARN Cannot verify Python modules availability in virtual environment
+   ```
+   - Cài đặt trong venv: `venv/bin/pip install pyzk requests`
+
+3. **No active employee found with attendance_device_id**
+   ```
+   ⚠️ Skipped: No active employee found with attendance_device_id: 295
    ```
    - Employee chưa có attendance_device_id được set
+   - Employee không có trạng thái "Active"
    - attendance_device_id không match với user_id trên device
 
-2. **ERPNext API errors**
+4. **ERPNext API errors**
    ```bash
    # Test API connection
    ./sync_from_master_device_to_erpnext.sh test
    ```
 
-3. **Device connection failed**
+5. **Device connection failed**
    ```
    ❌ Failed to connect to master device
    ```
    - Kiểm tra IP và port của master device
    - Firewall hoặc network issues
 
-4. **Template save errors**
+6. **Template save errors**
    ```
    Error: Failed to update employee: HTTP 500
    ```
@@ -217,7 +265,7 @@ finger_names = {
 ./sync_from_master_device_to_erpnext.sh --limit 1 -v sync
 
 # Kiểm tra logs
-tail -f logs/sync_master_device_to_erpnext.log
+tail -f logs/sync_from_master_device_to_erpnext/sync_master_device_to_erpnext.log
 ```
 
 ## 📋 ERPNext Setup Requirements
@@ -257,6 +305,7 @@ ERPNEXT_API_SECRET = "generated_secret"
 - ⚠️ **Fingerprint templates**: Transmitted as base64 over network
 - ⚠️ **Employee data**: PII được truyền qua API calls
 - ⚠️ **Data overwrite**: Script sẽ xóa existing fingerprints và tạo mới
+- ⚠️ **Active employees only**: Chỉ sync vào employees có status="Active"
 
 ### Best practices:
 - 🔐 Secure API credentials và config files
@@ -305,7 +354,24 @@ Device Updates → Master Device Sync → ERPNext Update → Notification
 
 ---
 
-**Lưu ý**: Đây là sync một chiều từ Master Device → ERPNext. Để sync ngược lại từ ERPNext → Devices, sử dụng các modes khác.
+## 📝 Changelog
 
-**Version**: 1.0  
-**Last updated**: 2025-01-19
+### Version 1.1 (2025-01-21)
+- ✅ **NEW**: Sử dụng erpnext_api_client thay vì requests trực tiếp
+- ✅ **NEW**: Chỉ sync vào Active employees (status="Active")
+- ✅ **NEW**: Logs được lưu vào folder riêng `logs/sync_from_master_device_to_erpnext/`
+- ✅ **NEW**: Bắt buộc sử dụng virtual environment `./venv`
+- ✅ **IMPROVED**: Enhanced data validation - skip empty/invalid templates
+- ✅ **IMPROVED**: Better error messages về active employee requirements
+- ✅ **IMPROVED**: API client hỗ trợ PUT/DELETE methods
+- ✅ **IMPROVED**: Shell script tự động kiểm tra và sử dụng virtual environment
+
+### Version 1.0 (2025-01-19)
+- Initial release với basic sync functionality
+
+---
+
+**Lưu ý**: Đây là sync một chiều từ Master Device → ERPNext (Active employees only). Để sync ngược lại từ ERPNext → Devices, sử dụng các modes khác.
+
+**Version**: 1.1  
+**Last updated**: 2025-01-21

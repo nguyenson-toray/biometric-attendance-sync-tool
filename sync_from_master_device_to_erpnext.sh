@@ -8,7 +8,9 @@
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_SCRIPT="$SCRIPT_DIR/sync_from_master_device_to_erpnext.py"
-LOG_DIR="$SCRIPT_DIR/logs"
+VENV_DIR="$SCRIPT_DIR/venv"
+PYTHON_BIN="$VENV_DIR/bin/python"
+LOG_DIR="$SCRIPT_DIR/logs/sync_from_master_device_to_erpnext"
 LOG_FILE="$LOG_DIR/sync_master_device_to_erpnext.log"
 ERROR_LOG="$LOG_DIR/sync_master_device_to_erpnext_error.log"
 LOCK_FILE="/tmp/sync_master_device_to_erpnext.lock"
@@ -112,16 +114,29 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if Python is available
-    if ! command -v python3 &> /dev/null; then
-        log_message "ERROR" "Python3 is not installed or not in PATH"
+    # Check if virtual environment exists
+    if [ ! -d "$VENV_DIR" ]; then
+        log_message "ERROR" "Virtual environment not found: $VENV_DIR"
+        log_message "ERROR" "Please create virtual environment: python3 -m venv venv"
         exit 1
     fi
     
-    # Check if required Python modules are available (skip in virtual environments)
-    if ! python3 -c "import pyzk, requests" &> /dev/null; then
-        log_message "WARN" "Cannot verify Python modules availability (may be in virtual environment)"
-        log_message "WARN" "If sync fails, ensure modules are installed: pip install pyzk requests"
+    # Check if Python binary exists in venv
+    if [ ! -f "$PYTHON_BIN" ]; then
+        log_message "ERROR" "Python binary not found in virtual environment: $PYTHON_BIN"
+        exit 1
+    fi
+    
+    # Check if required Python modules are available in venv
+    if ! "$PYTHON_BIN" -c "import pyzk, requests" &> /dev/null; then
+        log_message "WARN" "Cannot verify Python modules availability in virtual environment"
+        log_message "WARN" "If sync fails, ensure modules are installed in venv: $VENV_DIR/bin/pip install pyzk requests"
+    fi
+    
+    # Check if erpnext_api_client.py exists
+    if [ ! -f "$SCRIPT_DIR/erpnext_api_client.py" ]; then
+        log_message "ERROR" "ERPNext API Client not found: $SCRIPT_DIR/erpnext_api_client.py"
+        exit 1
     fi
     
     log_message "DEBUG" "Prerequisites check passed"
@@ -132,7 +147,8 @@ show_help() {
     cat << EOF
 Usage: $0 [OPTIONS] [COMMAND]
 
-Sync all users with fingerprints from master device to ERPNext.
+Sync all users with fingerprints from master device to ERPNext (Active employees only).
+Requires virtual environment at ./venv with required Python packages.
 
 COMMANDS:
     sync            Sync all users from master device to ERPNext (default)
@@ -157,6 +173,10 @@ EXAMPLES:
 LOGS:
     Main log:    $LOG_FILE
     Error log:   $ERROR_LOG
+
+SETUP:
+    Create virtual environment: python3 -m venv venv
+    Install packages: venv/bin/pip install pyzk requests
 
 EOF
 }
@@ -200,15 +220,15 @@ run_sync() {
         dry_run_arg="--dry-run"
     fi
     
-    log_message "INFO" "Starting fingerprint sync from master device to ERPNext..."
+    log_message "INFO" "Starting fingerprint sync from master device to ERPNext (Active employees only)..."
     log_message "INFO" "Script: $PYTHON_SCRIPT"
     log_message "INFO" "Args: $limit_arg $dry_run_arg"
     
-    # Run the Python script
+    # Run the Python script using virtual environment
     if [ "$VERBOSE" = "true" ]; then
-        python3 "$PYTHON_SCRIPT" $limit_arg $dry_run_arg 2>&1 | tee -a "$LOG_FILE"
+        "$PYTHON_BIN" "$PYTHON_SCRIPT" $limit_arg $dry_run_arg 2>&1 | tee -a "$LOG_FILE"
     else
-        python3 "$PYTHON_SCRIPT" $limit_arg $dry_run_arg >> "$LOG_FILE" 2>&1
+        "$PYTHON_BIN" "$PYTHON_SCRIPT" $limit_arg $dry_run_arg >> "$LOG_FILE" 2>&1
     fi
     
     local exit_code=$?
@@ -227,7 +247,7 @@ run_test() {
     log_message "INFO" "Running connectivity test..."
     
     # Test master device connectivity
-    python3 -c "
+    "$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
 import local_config as config
