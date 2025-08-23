@@ -38,12 +38,19 @@ ERPNEXT_VERSION = getattr(config, 'ERPNEXT_VERSION', 14)
 #  - <device_id>_push_timestamp
 #  - <shift_type>_sync_timestamp
 
-def main():
+def main(bypass_device_connection=False):
     """Takes care of checking if it is time to pull data based on config,
     then calling the relevent functions to pull data and push to EPRNext.
 
+    Args:
+        bypass_device_connection (bool): If True, skip device connection and data fetch
     """
     try:
+        # Check if device connection should be bypassed
+        if bypass_device_connection:
+            info_logger.info("Device connection bypassed - skipping device data fetch")
+            return
+        
         last_lift_off_timestamp = _safe_convert_date(status.get('lift_off_timestamp'), "%Y-%m-%d %H:%M:%S.%f")
         if (last_lift_off_timestamp and last_lift_off_timestamp < datetime.datetime.now() - datetime.timedelta(minutes=config.PULL_FREQUENCY)) or not last_lift_off_timestamp:
             status.set('lift_off_timestamp', str(datetime.datetime.now()))
@@ -374,6 +381,7 @@ info_logger = setup_logger('info_logger', '/'.join([config.LOGS_DIRECTORY, 'logs
 status = PickleDB('/'.join([config.LOGS_DIRECTORY, 'status.json']))
 
 def infinite_loop(sleep_time=15):
+    """Legacy infinite loop for backward compatibility when run directly"""
     print("Service Running...")
     while True:
         try:
@@ -381,6 +389,16 @@ def infinite_loop(sleep_time=15):
             time.sleep(sleep_time)
         except BaseException as e:
             print(e)
+
+def run_single_cycle(bypass_device_connection=False):
+    """Run a single sync cycle - used by erpnext_service.py"""
+    try:
+        main(bypass_device_connection=bypass_device_connection)
+        return True
+    except Exception as e:
+        error_logger.exception('Exception in run_single_cycle...')
+        print(f"Single cycle error: {e}")
+        return False
 
 if __name__ == "__main__":
     infinite_loop()

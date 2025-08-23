@@ -2,9 +2,14 @@
 
 Đồng bộ dữ liệu vân tay từ thiết bị master lên ERPNext, lưu vào custom_fingerprints child table.
 
-## 📋 Mô tả chức năng
+## 🎯 Chức Năng
 
-Hệ thống này đọc tất cả user và dữ liệu vân tay từ thiết bị master, tìm employee tương ứng trong ERPNext theo `attendance_device_id` (chỉ Active employees), và lưu fingerprint templates vào `custom_fingerprints` child table.
+**Backup fingerprint data từ thiết bị master lên ERPNext:**
+
+1. **Scan Master Device**: Đọc tất cả users có fingerprint templates từ thiết bị master
+2. **Match Employees**: Tìm Active employee tương ứng theo `attendance_device_id`  
+3. **Save to ERPNext**: Lưu fingerprint data vào bảng con `custom_fingerprints`
+4. **Template Validation**: Chỉ lưu templates hợp lệ, bỏ qua templates rỗng
 
 ### ⚡ Tính năng chính:
 - ✅ **Đọc từ Master Device**: Scan tất cả users và fingerprints từ thiết bị master  
@@ -129,37 +134,67 @@ venv/bin/python sync_from_master_device_to_erpnext.py
 python sync_from_erpnext_to_device.py --mode from-device
 ```
 
-## 📊 Quy trình xử lý
+## 🔄 Thuật Toán
 
-### 1. Đọc dữ liệu từ Master Device
+```mermaid
+graph TD
+    A[Bắt đầu] --> B[Kết nối Master Device]
+    B --> C[Scan tất cả users trên Master]
+    C --> D{User có fingerprints?}
+    D -->|Có| E[Extract finger templates]
+    D -->|Không| F[Skip user]
+    E --> G[Tìm Active Employee theo attendance_device_id]
+    F --> H{Còn users?}
+    G --> I{Tìm thấy Employee?}
+    I -->|Có| J[Clear existing fingerprints]
+    I -->|Không| K[Skip - No matching employee]
+    J --> L[Save fingerprints to custom_fingerprints]
+    K --> H
+    L --> M[Update Employee document]
+    M --> H
+    H -->|Có| D
+    H -->|Không| N[Báo cáo kết quả]
 ```
-🔍 Reading all users from master device...
+
+## 📊 Quy Trình Xử Lý
+
+### **Step 1: Scan Master Device**
+```bash
+🔍 Reading users from master device...
 Master: Machine_8 (10.0.1.48)
 👥 Found 901 total users on master device
-  Progress: 0/901
+  Progress: 100/901
   ✅ 161: Truong Thi My Hoa (4 fingerprints)
   ✅ 295: Nguyen Thi Thuong (2 fingerprints)
-📊 Found 200+ users with fingerprints
+  ✅ 623: Nguyen Thi Nga Thu (3 fingerprints)
+📊 Found 247 users with fingerprints
 ```
 
-### 2. Matching và lưu vào ERPNext
-```
-📤 Syncing 200 users to ERPNext...
-Progress: 1/200 - 161: Truong Thi My Hoa (4 fingerprints)
+### **Step 2: Match & Save to ERPNext**
+```bash
+📤 Syncing 247 users to ERPNext...
+
+Progress: 1/247 - 161: Truong Thi My Hoa (4 fingerprints)
   ✅ Synced to ERPNext: TIQN-0161 - Truong Thi My Hoa (4 fingerprints)
-Progress: 2/200 - 295: Nguyen Thi Thuong (2 fingerprints)
+
+Progress: 2/247 - 295: Nguyen Thi Thuong (2 fingerprints)  
   ⚠️ Skipped: No active employee found with attendance_device_id: 295
+
+Progress: 3/247 - 623: Nguyen Thi Nga Thu (3 fingerprints)
+  ✅ Synced to ERPNext: TIQN-0623 - Nguyen Thi Nga Thu (3 fingerprints)
 ```
 
-### 3. Kết quả cuối cùng
-```
+### **Step 3: Final Summary**
+```bash
+============================================================
 🎯 SYNC SUMMARY - MASTER DEVICE TO ERPNEXT
-Total users found on device: 200
-Users processed: 200
-Users successfully synced to ERPNext: 150
-Users skipped (no matching active employee): 50
+Total users found on device: 247
+Users processed: 247
+Users successfully synced to ERPNext: 185
+Users skipped (no matching active employee): 62
 Success rate: 75.0%
-⚠️ Partial success: 150/200 users synced
+⚠️ Partial success: 185/247 users synced
+============================================================
 ```
 
 ## 🗃️ Cấu trúc dữ liệu ERPNext
@@ -191,8 +226,8 @@ Success rate: 75.0%
 ### Finger Name Mapping
 ```python
 finger_names = {
-    0: "Left Thumb",    1: "Left Index",     2: "Left Middle", 
-    3: "Left Ring",     4: "Left Little",    5: "Right Thumb",
+    0: "Left Little", 1: "Left Ring", 2: "Left Middle", 
+    3: "Left Thumb",  4: "Left Index",  5: "Right Thumb",
     6: "Right Index",   7: "Right Middle",   8: "Right Ring", 
     9: "Right Little"
 }

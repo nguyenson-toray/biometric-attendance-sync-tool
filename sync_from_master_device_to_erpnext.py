@@ -185,12 +185,8 @@ class MasterDeviceToERPNextSync:
             return {"success": False, "message": f"Error: {str(e)}"}
             
     def get_finger_name(self, finger_index):
-        """Get standardized finger name from index"""
-        finger_names = {
-            0: "Left Thumb", 1: "Left Index", 2: "Left Middle", 3: "Left Ring", 4: "Left Little",
-            5: "Right Thumb", 6: "Right Index", 7: "Right Middle", 8: "Right Ring", 9: "Right Little"
-        }
-        return finger_names.get(finger_index, f"Finger {finger_index}")
+        """Get standardized finger name from index using local_config mapping"""
+        return config.get_finger_name(finger_index)
         
     def sync_user_to_erpnext(self, user_data):
         """Sync single user from device to ERPNext (Active employees only)"""

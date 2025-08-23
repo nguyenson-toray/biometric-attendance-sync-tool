@@ -104,7 +104,15 @@ class MasterToTargetSync:
                             'fingerprints': fingerprints
                         }
                         users_with_fingerprints.append(user_data)
-                        self.logger.info(f"  ✅ {user.user_id}: {user.name} ({len(fingerprints)} fingerprints)")
+                        
+                        # Enhanced logging with finger details
+                        finger_details = []
+                        for fp in fingerprints:
+                            finger_name = local_config.get_finger_name(fp['finger_index'])
+                            finger_details.append(f"{fp['finger_index']}:{finger_name}")
+                        
+                        finger_list = ", ".join(finger_details)
+                        self.logger.info(f"  ✅ {user.user_id}: {user.name} ({len(fingerprints)} fingerprints: {finger_list})")
                         
                 except Exception as e:
                     # Skip users with errors

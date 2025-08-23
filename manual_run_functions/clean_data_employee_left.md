@@ -1,7 +1,12 @@
-# Clean Data Employee Left - Dọn dẹp dữ liệu nhân viên nghỉ việc
+# Clean Data Employee Left - Dọn Dẹp Dữ Liệu Nhân Viên Nghỉ Việc
 
-## Mô tả
-Tool dọn dẹp dữ liệu hoàn chỉnh cho nhân viên có trạng thái "Left". **Tự động xử lý an toàn** - chỉ dọn dẹp nhân viên đã quá ngày nghỉ việc.
+## 🎯 Chức Năng
+
+Tool dọn dẹp toàn diện cho nhân viên có trạng thái "Left" (Nghỉ việc):
+
+1. **Xác thực ngày tháng**: Chỉ xử lý nhân viên có `current_date > relieving_date`  
+2. **Xóa dữ liệu ERPNext**: Xóa tất cả fingerprint records trong bảng `custom_fingerprints`
+3. **Xóa template thiết bị**: Clear tất cả fingerprint templates trên các máy chấm công
 
 ## Thuật toán hoạt động
 

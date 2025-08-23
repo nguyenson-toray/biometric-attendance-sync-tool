@@ -2,9 +2,14 @@
 
 Đồng bộ dữ liệu vân tay từ thiết bị master đến tất cả các thiết bị khác trong hệ thống.
 
-## 📋 Mô tả chức năng
+## 🎯 Chức Năng
 
-Hệ thống này đọc tất cả user và dữ liệu vân tay từ thiết bị master, sau đó đồng bộ đến các thiết bị target được định nghĩa trong config. Sử dụng threading để tăng tốc độ xử lý.
+**Sao chép toàn bộ users có fingerprints từ 1 thiết bị master sang các thiết bị target:**
+
+1. **Scan Master Device**: Đọc tất cả users có fingerprint templates từ thiết bị master
+2. **Template Extraction**: Lấy toàn bộ 10 fingerprint templates (nếu có) cho mỗi user  
+3. **Parallel Sync**: Đồng bộ đồng thời đến nhiều thiết bị target
+4. **User Recreation**: Xóa user cũ và tạo lại với đầy đủ fingerprints
 
 ### ⚡ Tính năng chính:
 - ✅ **Đọc từ Master Device**: Scan tất cả users và fingerprints từ thiết bị master
@@ -79,38 +84,72 @@ python sync_all_from_master_device_to_other_devices.py
 python sync_all_from_master_device_to_other_devices.py --limit 5
 ```
 
-## 📊 Quy trình xử lý
+## 🔄 Thuật Toán
 
-### 1. Đọc dữ liệu từ Master Device
+```mermaid
+graph TD
+    A[Bắt đầu] --> B[Kết nối Master Device]
+    B --> C[Scan tất cả users trên Master]
+    C --> D{User có fingerprints?}
+    D -->|Có| E[Extract 10 finger templates]
+    D -->|Không| F[Skip user]
+    E --> G[Lưu user data + templates]
+    F --> H{Còn users?}
+    G --> H
+    H -->|Có| D
+    H -->|Không| I[Bắt đầu sync parallel]
+    I --> J[Tạo threads cho từng target device]
+    J --> K[Mỗi thread xử lý tất cả users]
+    K --> L[Connect target device]
+    L --> M[Xóa user cũ nếu tồn tại]
+    M --> N[Tạo user mới + set fingerprints]
+    N --> O{Còn users?}
+    O -->|Có| M
+    O -->|Không| P[Báo cáo kết quả device]
+    P --> Q[Tổng hợp kết quả]
 ```
+
+## 📊 Quy Trình Xử Lý
+
+### **Step 1: Scan Master Device**
+```bash
 🔍 Scanning master device for users with fingerprints...
+Master: Machine_8 (10.0.1.48)
 👥 Found 901 total users on master device
-  Progress: 0/901
+  Progress: 100/901
   ✅ 161: Truong Thi My Hoa (4 fingerprints)
-  ✅ 295: Nguyen Thi Thuong (2 fingerprints)
-📊 Found 200+ users with fingerprints
+  ✅ 295: Nguyen Thi Thuong (2 fingerprints)  
+  ✅ 623: Nguyen Thi Nga Thu (3 fingerprints)
+📊 Found 247 users with fingerprints
 ```
 
-### 2. Đồng bộ đến Target Devices
-```
-📤 Syncing 200 users to 2 target devices...
-Progress: 1/200 - 161: Truong Thi My Hoa (4 fingerprints)
-  ✅ Synced to 2/2 devices: Machine_1, Machine_10
-Progress: 2/200 - 295: Nguyen Thi Thuong (2 fingerprints)
+### **Step 2: Parallel Sync to Targets**
+```bash
+📤 Syncing 247 users to 2 target devices...
+Targets: ['Machine_10']
+
+Progress: 1/247 - 161: Truong Thi My Hoa
+  ✅ Synced to 1/1 devices: Machine_10
+
+Progress: 2/247 - 295: Nguyen Thi Thuong
+  ✅ Synced to 1/1 devices: Machine_10
+
+Progress: 3/247 - 623: Nguyen Thi Nga Thu
   ❌ Failed to sync to any devices
-    Machine_1: Failed to create user 295
-    Machine_10: Connection timeout
+    Machine_10: Template save error
 ```
 
-### 3. Kết quả cuối cùng
-```
+### **Step 3: Final Summary**
+```bash
+============================================================
 🎯 SYNC SUMMARY
-Total users found: 200
-Users processed: 200
-Users successfully synced: 195
-Target devices: 2
-Success rate: 97.5%
-✅ Most users synced successfully!
+Total users found: 247
+Users processed: 247  
+Users successfully synced: 245
+Target devices: 1
+Success rate: 99.2%
+✅ All users synced successfully!
+============================================================
 ```
 
 ## ⚡ Hiệu suất

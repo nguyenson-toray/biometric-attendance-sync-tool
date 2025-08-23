@@ -11,14 +11,19 @@ import time
 import base64
 from zk import ZK
 from zk.base import Finger
-# from unidecode import unidecode  # Temporarily commented out
+try:
+    from unidecode import unidecode
+    UNIDECODE_AVAILABLE = True
+except ImportError:
+    UNIDECODE_AVAILABLE = False
+    print("Warning: unidecode not available, using original Vietnamese names")
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 import local_config
 from erpnext_api_client import ERPNextAPIClient
-from sync_from_erpnext_to_device_state import SyncState
+from sync_user_info_state import SyncState
 
 # Setup logging to sync_from_erpnext_to_device folder
 sync_logs_dir = os.path.join(local_config.LOGS_DIRECTORY, 'sync_from_erpnext_to_device')
@@ -96,12 +101,15 @@ class ERPNextSyncToDeviceStandalone:
             return False
     
     def shorten_name(self, full_name, max_length=24):
-        """Shorten employee name if it exceeds max length and convert Vietnamese to non-accented"""
+        """Convert Vietnamese to non-accented characters and shorten if needed for device compatibility"""
         if not full_name:
             return full_name
             
-        # text_processed = unidecode(full_name)  # Temporarily use original
-        text_processed = full_name
+        # Always normalize Vietnamese characters for device compatibility
+        if UNIDECODE_AVAILABLE:
+            text_processed = unidecode(full_name)  # 'Nguyễn Văn A' → 'Nguyen Van A'
+        else:
+            text_processed = full_name  # Fallback if unidecode not available
         text_processed = ' '.join(text_processed.split()).strip()
         
         if len(text_processed) > max_length:
