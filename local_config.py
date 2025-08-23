@@ -2,15 +2,15 @@ import datetime
 # ERPNext related configs
 
 ERPNEXT_VERSION = 15 
-# SERVER_NAME = 'erp.tiqn.local' 
-# ERPNEXT_API_KEY = '7c5bab33922d7f6'  
-# ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
+SERVER_NAME = 'erp.tiqn.local' 
+ERPNEXT_API_KEY = '7c5bab33922d7f6'  
+ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
 
 
 # Site Sonnt
-SERVER_NAME = '10.0.1.21'
-ERPNEXT_API_KEY = '7c5bab33922d7f6'
-ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
+# SERVER_NAME = '10.0.1.21'
+# ERPNEXT_API_KEY = '7c5bab33922d7f6'
+# ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
 
 # Site Vinhnt
 # SERVER_NAME = 'erp-vinhnt.tiqn.local'
