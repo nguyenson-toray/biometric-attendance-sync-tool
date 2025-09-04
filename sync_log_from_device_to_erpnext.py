@@ -1,8 +1,8 @@
-
 import local_config as config
 import requests
 import datetime
 import json
+import csv
 import os
 import sys
 import time
@@ -160,10 +160,10 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
                 str(device_attendance_log['punch']), str(device_attendance_log['status']),
                 json.dumps(device_attendance_log, default=str)]))
         else:
-            # Check if it's a duplicate timestamp error
+            # Check for specific error types for custom logging
             if "This employee already has a log with the same timestamp" in erpnext_message:
                 # Log to error_duplicate.log instead of failed log
-                with open('/'.join([config.LOGS_DIRECTORY, 'error_duplicate.log']), 'a') as duplicate_log:
+                with open(os.path.join(config.LOGS_DIRECTORY, 'error_duplicate.log'), 'a') as duplicate_log:
                     duplicate_log.write("\t".join([
                         str(datetime.datetime.now()),
                         "DUPLICATE",
@@ -176,12 +176,60 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
                         json.dumps(device_attendance_log, default=str)
                     ]) + "\n")
                 print(f"DUPLICATE: User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']} - logged to error_duplicate.log at {datetime.datetime.now()}")
+
+            elif EMPLOYEE_INACTIVE_ERROR_MESSAGE in erpnext_message:
+                # Custom logging for inactive employees
+                try:
+                    inactive_log_dir = os.path.join(config.LOGS_DIRECTORY, 'sync_from_master_device_to_erpnext', 'attendance_failed_inactive_employee')
+                    os.makedirs(inactive_log_dir, exist_ok=True)
+                    
+                    today_str = datetime.datetime.now().strftime('%y%m%d')
+                    log_file_path = os.path.join(inactive_log_dir, f'attendance_failed_inactive_employee_{today_str}.log')
+                    csv_file_path = os.path.join(inactive_log_dir, f'Attendance Checkin Inactive Employee {today_str}.csv')
+
+                    # Log to text file
+                    with open(log_file_path, 'a') as log_file:
+                        log_file.write("\t".join([
+                            str(datetime.datetime.now()),
+                            "INACTIVE_EMPLOYEE",
+                            str(erpnext_status_code),
+                            str(device_attendance_log['uid']),
+                            str(device_attendance_log['user_id']),
+                            str(device_attendance_log['timestamp']),
+                            device['device_id'],
+                            json.dumps(device_attendance_log, default=str)
+                        ]) + "\n")
+
+                    # Log to CSV file
+                    file_exists = os.path.isfile(csv_file_path)
+                    with open(csv_file_path, 'a', newline='') as csvfile:
+                        csv_writer = csv.writer(csvfile)
+                        if not file_exists:
+                            csv_writer.writerow(['ID', 'Employee', 'Time', 'Location / Device ID'])
+                        csv_writer.writerow([
+                            '',  # ID is empty
+                            device_attendance_log['user_id'],
+                            device_attendance_log['timestamp'],
+                            device['device_id']
+                        ])
+                    
+                    print(f"INACTIVE: User ID {device_attendance_log['user_id']} - logged to separate files at {datetime.datetime.now()}")
+
+                except Exception as e:
+                    # Fallback to default error logger if custom logging fails
+                    error_logger.exception('Failed during custom logging for inactive employee.')
+                    attendance_failed_logger.error("\t".join([str(erpnext_status_code), str(device_attendance_log['uid']),
+                        str(device_attendance_log['user_id']), str(device_attendance_log['timestamp'].timestamp()),
+                        str(device_attendance_log['punch']), str(device_attendance_log['status']),
+                        json.dumps(device_attendance_log, default=str)]))
+
             else:
                 # Log other errors to normal failed log
                 attendance_failed_logger.error("\t".join([str(erpnext_status_code), str(device_attendance_log['uid']),
                     str(device_attendance_log['user_id']), str(device_attendance_log['timestamp'].timestamp()),
                     str(device_attendance_log['punch']), str(device_attendance_log['status']),
                     json.dumps(device_attendance_log, default=str)]))
+
             if not(any(error in erpnext_message for error in allowlisted_errors)):
                 raise Exception('API Call to ERPNext Failed.')
 
