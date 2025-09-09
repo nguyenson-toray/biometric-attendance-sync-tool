@@ -41,21 +41,21 @@ biometric-attendance-sync-tool/
 
 ## ⚙️ Thiết lập môi trường
 
-### 1. Tạo Virtual Environment (Bắt buộc)
+### 1. Virtual Environment Setup (Khuyến khích)
+
+**Lưu ý**: Virtual environment được khuyến khích nhưng không bắt buộc. Code có thể chạy với system Python.
 
 ```bash
-# Tạo virtual environment
+# Option 1: Sử dụng virtual environment
 python3 -m venv venv
-
-# Kích hoạt virtual environment
 source venv/bin/activate  # Linux/macOS
-# hoặc: venv\Scripts\activate  # Windows
-
-# Cài đặt các packages cần thiết
 pip install pyzk requests
 
+# Option 2: Cài đặt system-wide (nếu có quyền)
+pip3 install pyzk requests
+
 # Kiểm tra cài đặt
-python -c "import pyzk, requests; print('All packages installed successfully')"
+python3 -c "import pyzk, requests; print('All packages installed successfully')"
 ```
 
 ### 2. Cấu hình
@@ -64,16 +64,21 @@ python -c "import pyzk, requests; print('All packages installed successfully')"
 ```python
 # ERPNext connection
 ERPNEXT_URL = "http://10.0.1.21"
-ERPNEXT_API_KEY = "your-api-key"
-ERPNEXT_API_SECRET = "your-api-secret"
+ERPNEXT_API_KEY = "7c5bab33922d7f6"
+ERPNEXT_API_SECRET = "2d379dbe1ef33ab"
 
-# Master device - nguồn dữ liệu vân tay
+# Master device - nguồn dữ liệu vân tay (hiện tại: Machine_1)
 devices_master = {
-    'device_id': 'Machine_8',
-    'ip': '10.0.1.48',
+    'device_id': 'Machine_1',
+    'ip': '10.0.1.41', 
     'punch_direction': None,
-    'clear_from_device_on_fetch': False
+    'clear_from_device_on_fetch': False,
+    'latitude': 0.0000,
+    'longitude': 0.0000
 }
+
+# Optional: Filter specific user IDs (empty array = sync all)
+sync_from_master_device_to_erpnext_filters_id = ['1669','1670']  # or [] for all
 ```
 
 ### ERPNext Employee Structure
@@ -92,7 +97,7 @@ Employee doctype cần có:
 
 ### 1. Shell Script (Khuyến khích)
 
-**Lưu ý**: Shell script tự động sử dụng virtual environment `./venv`
+**Lưu ý**: Shell script ưu tiên virtual environment `./venv` nếu có, fallback về system Python
 
 ```bash
 # Sync tất cả users từ master device lên ERPNext (chỉ Active employees)
@@ -114,17 +119,21 @@ Employee doctype cần có:
 ### 2. Python Script trực tiếp
 
 ```bash
-# Kích hoạt virtual environment trước
+# Option 1: Với virtual environment
 source venv/bin/activate
+python3 sync_from_master_device_to_erpnext.py
 
-# Sync tất cả users
-python sync_from_master_device_to_erpnext.py
+# Option 2: Trực tiếp với venv path
+venv/bin/python3 sync_from_master_device_to_erpnext.py
 
-# Sync với giới hạn
-python sync_from_master_device_to_erpnext.py --limit 5
+# Option 3: System Python (nếu có packages)  
+python3 sync_from_master_device_to_erpnext.py
 
-# Hoặc chạy trực tiếp với venv (không cần activate)
-venv/bin/python sync_from_master_device_to_erpnext.py
+# Sync với giới hạn users
+python3 sync_from_master_device_to_erpnext.py --limit 5
+
+# Sync với filter user IDs
+python3 sync_from_master_device_to_erpnext.py --filter-ids 1669,1670
 ```
 
 ### 3. Script tích hợp
@@ -250,18 +259,18 @@ finger_names = {
 
 ### Các lỗi phổ biến:
 
-1. **Virtual environment not found**
+1. **Python modules not found**
    ```
-   ERROR Virtual environment not found: ./venv
+   ModuleNotFoundError: No module named 'pyzk' 
    ```
-   - Tạo virtual environment: `python3 -m venv venv`
-   - Cài packages: `venv/bin/pip install pyzk requests`
+   - Cài packages: `pip3 install pyzk requests` hoặc `venv/bin/pip install pyzk requests`
 
-2. **Python modules not available**
+2. **ERPNext API connection failed**
    ```
-   WARN Cannot verify Python modules availability in virtual environment
+   Error: Failed to connect to ERPNext API
    ```
-   - Cài đặt trong venv: `venv/bin/pip install pyzk requests`
+   - Kiểm tra API credentials trong `local_config.py`
+   - Test API: `curl -H "Authorization: token API_KEY:API_SECRET" http://erpnext/api/method/frappe.auth.get_logged_user`
 
 3. **No active employee found with attendance_device_id**
    ```
@@ -406,7 +415,10 @@ Device Updates → Master Device Sync → ERPNext Update → Notification
 
 ---
 
-**Lưu ý**: Đây là sync một chiều từ Master Device → ERPNext (Active employees only). Để sync ngược lại từ ERPNext → Devices, sử dụng các modes khác.
+**Lưu ý**: Đây là sync một chiều từ Master Device → ERPNext (Active employees only). Để sync ngược lại từ ERPNext → Devices, sử dụng `sync_user_info_from_erpnext_to_device.py`.
 
-**Version**: 1.1  
-**Last updated**: 2025-01-21
+**Current config**: Master device = Machine_1 (10.0.1.41)  
+**Filter**: sync_from_master_device_to_erpnext_filters_id = ['1669','1670'] (hoặc [] cho tất cả)
+
+**Version**: 1.2  
+**Last updated**: 2025-09-09

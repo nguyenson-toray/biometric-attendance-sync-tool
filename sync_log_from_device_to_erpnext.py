@@ -51,6 +51,11 @@ def main(bypass_device_connection=False):
             info_logger.info("Device connection bypassed - skipping device data fetch")
             return
         
+        # Check re-sync mode configuration
+        if not check_re_sync_mode():
+            error_logger.error("Re-sync mode configuration invalid, aborting sync process")
+            return
+        
         last_lift_off_timestamp = _safe_convert_date(status.get('lift_off_timestamp'), "%Y-%m-%d %H:%M:%S.%f")
         if (last_lift_off_timestamp and last_lift_off_timestamp < datetime.datetime.now() - datetime.timedelta(minutes=config.PULL_FREQUENCY)) or not last_lift_off_timestamp:
             status.set('lift_off_timestamp', str(datetime.datetime.now()))
@@ -73,10 +78,18 @@ def main(bypass_device_connection=False):
                     if os.path.exists(dump_file):
                         os.remove(dump_file)
                     info_logger.info("Successfully processed Device: "+ device['device_id'])
-                except:
+                except Exception as e:
                     error_logger.exception('exception when calling pull_process_and_push_data function for device'+json.dumps(device, default=str))
+                    # Keep dump file if it exists to allow recovery on next run
+                    if os.path.exists(dump_file):
+                        info_logger.error(f'Dump file preserved for recovery: {dump_file}')
+                    # Continue processing other devices even if one fails
+                    continue
             if hasattr(config,'shift_type_device_mapping'):
                 update_shift_last_sync_timestamp(config.shift_type_device_mapping)
+            
+            # Note: User will manually set re_sync_data_date_range = [] after completion
+            
             status.set('mission_accomplished_timestamp', str(datetime.datetime.now()))
             status.save()
             info_logger.info("Mission Accomplished!")
@@ -98,35 +111,82 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
     if not device_attendance_logs:
         device_attendance_logs = get_all_attendance_from_device(device['ip'], device_id=device['device_id'], clear_from_device_on_fetch=device['clear_from_device_on_fetch'])
         if not device_attendance_logs:
+            info_logger.info(f"No attendance logs found on device {device['device_id']}")
             return
-    # for finding the last successfull push and restart from that point (or) from a set 'config.IMPORT_START_DATE' (whichever is later)
-    index_of_last = -1
-    last_line = get_last_line_from_file('/'.join([config.LOGS_DIRECTORY, attendance_success_log_file])+'.log')
-    import_start_date = _safe_convert_date(config.IMPORT_START_DATE, "%Y%m%d")
-    if last_line or import_start_date:
-        last_user_id = None
-        last_timestamp = None
-        if last_line:
-            last_user_id, last_timestamp = last_line.split("\t")[4:6]
-            last_timestamp = datetime.datetime.fromtimestamp(float(last_timestamp))
-        if import_start_date:
-            if last_timestamp:
-                if last_timestamp < import_start_date:
+    
+    # Sort logs by timestamp to ensure proper processing order
+    device_attendance_logs.sort(key=lambda x: x['timestamp'])
+    info_logger.info(f"Device {device['device_id']}: Fetched {len(device_attendance_logs)} logs, range: {device_attendance_logs[0]['timestamp']} to {device_attendance_logs[-1]['timestamp']}")
+    # Determine starting index based on mode
+    index_of_last = 0  # Start from beginning by default to ensure no logs are missed
+    
+    # Check if we're in re-sync mode
+    is_re_sync_mode = hasattr(config, 're_sync_data_date_range') and config.re_sync_data_date_range
+    
+    if is_re_sync_mode:
+        # In re-sync mode: process ALL logs, ignore previous success log
+        info_logger.info(f"Device {device['device_id']}: Re-sync mode - processing ALL logs from beginning")
+    else:
+        # Normal mode: find last successful push and restart from that point
+        success_log_path = '/'.join([config.LOGS_DIRECTORY, attendance_success_log_file])+'.log'
+        last_line = None
+        if os.path.exists(success_log_path) and os.path.getsize(success_log_path) > 0:
+            last_line = get_last_line_from_file(success_log_path)
+        else:
+            info_logger.info(f"No previous success log found for device {device['device_id']}, starting from beginning")
+        
+        import_start_date = _safe_convert_date(config.IMPORT_START_DATE, "%Y%m%d")
+        if last_line or import_start_date:
+            last_user_id = None
+            last_timestamp = None
+            if last_line:
+                last_user_id, last_timestamp = last_line.split("\t")[4:6]
+                last_timestamp = datetime.datetime.fromtimestamp(float(last_timestamp))
+            if import_start_date:
+                if last_timestamp:
+                    if last_timestamp < import_start_date:
+                        last_timestamp = import_start_date
+                        last_user_id = None
+                else:
                     last_timestamp = import_start_date
-                    last_user_id = None
-            else:
-                last_timestamp = import_start_date
-        for i, x in enumerate(device_attendance_logs):
-            if last_user_id and last_timestamp:
-                if last_user_id == str(x['user_id']) and last_timestamp == x['timestamp']:
-                    index_of_last = i
-                    break
-            elif last_timestamp:
-                if x['timestamp'] >= last_timestamp:
-                    index_of_last = i
-                    break
+            for i, x in enumerate(device_attendance_logs):
+                if last_user_id and last_timestamp:
+                    if last_user_id == str(x['user_id']) and last_timestamp == x['timestamp']:
+                        index_of_last = i + 1  # Skip the already processed log
+                        break
+                elif last_timestamp:
+                    if x['timestamp'] > last_timestamp:  # Use > instead of >= to avoid duplicate processing
+                        index_of_last = i
+                        break
+                    elif x['timestamp'] == last_timestamp:
+                        # If exact timestamp match but no user_id match, start from next log to be safe
+                        index_of_last = i + 1
+                        break
 
-    for device_attendance_log in device_attendance_logs[index_of_last+1:]:
+    # Apply different logic based on mode
+    if is_re_sync_mode:
+        # In re-sync mode: process ALL logs, then filter by date range
+        try:
+            start_date = datetime.datetime.strptime(config.re_sync_data_date_range[0], "%Y%m%d").date()
+            end_date = datetime.datetime.strptime(config.re_sync_data_date_range[1], "%Y%m%d").date()
+            
+            # Filter ALL logs by date range (ignore index_of_last)
+            filtered_logs = [log for log in device_attendance_logs 
+                           if start_date <= log['timestamp'].date() <= end_date]
+            
+            info_logger.info(f"Device {device['device_id']}: Re-sync mode - Date range filter applied [{config.re_sync_data_date_range[0]} to {config.re_sync_data_date_range[1]}], "
+                           f"processing {len(filtered_logs)} logs (from {len(device_attendance_logs)} total logs)")
+            
+        except Exception as e:
+            error_logger.exception(f"Error applying date range filter in re-sync mode: {e}")
+            filtered_logs = device_attendance_logs  # Fallback to all logs
+            info_logger.info(f"Device {device['device_id']}: Re-sync mode fallback - processing {len(filtered_logs)} total logs")
+    else:
+        # Normal mode: start from index_of_last
+        filtered_logs = device_attendance_logs[index_of_last:]
+        info_logger.info(f"Device {device['device_id']}: Normal mode - processing {len(filtered_logs)} logs, starting from index {index_of_last}")
+    
+    for device_attendance_log in filtered_logs:
         punch_direction = device['punch_direction']
         if punch_direction == 'AUTO':
             if device_attendance_log['punch'] in device_punch_values_OUT:
@@ -162,20 +222,27 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
         else:
             # Check for specific error types for custom logging
             if "This employee already has a log with the same timestamp" in erpnext_message:
-                # Log to error_duplicate.log instead of failed log
-                with open(os.path.join(config.LOGS_DIRECTORY, 'error_duplicate.log'), 'a') as duplicate_log:
-                    duplicate_log.write("\t".join([
-                        str(datetime.datetime.now()),
-                        "DUPLICATE",
-                        str(erpnext_status_code),
-                        str(device_attendance_log['uid']),
-                        str(device_attendance_log['user_id']),
-                        str(device_attendance_log['timestamp'].timestamp()),
-                        str(device_attendance_log['punch']),
-                        str(device_attendance_log['status']),
-                        json.dumps(device_attendance_log, default=str)
-                    ]) + "\n")
-                print(f"DUPLICATE: User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']} - logged to error_duplicate.log at {datetime.datetime.now()}")
+                # Check if we're in re-sync mode
+                is_re_sync_mode = hasattr(config, 're_sync_data_date_range') and config.re_sync_data_date_range
+                
+                if is_re_sync_mode:
+                    # In re-sync mode: skip duplicate logging, just continue silently
+                    info_logger.info(f"Re-sync mode: Skipping duplicate - User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']}")
+                else:
+                    # Normal mode: log to error_duplicate.log as before
+                    with open(os.path.join(config.LOGS_DIRECTORY, 'error_duplicate.log'), 'a') as duplicate_log:
+                        duplicate_log.write("\t".join([
+                            str(datetime.datetime.now()),
+                            "DUPLICATE",
+                            str(erpnext_status_code),
+                            str(device_attendance_log['uid']),
+                            str(device_attendance_log['user_id']),
+                            str(device_attendance_log['timestamp'].timestamp()),
+                            str(device_attendance_log['punch']),
+                            str(device_attendance_log['status']),
+                            json.dumps(device_attendance_log, default=str)
+                        ]) + "\n")
+                    print(f"DUPLICATE: User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']} - logged to error_duplicate.log at {datetime.datetime.now()}")
 
             elif EMPLOYEE_INACTIVE_ERROR_MESSAGE in erpnext_message:
                 # Custom logging for inactive employees
@@ -420,6 +487,49 @@ def _safe_get_error_str(res):
     except:
         error_str = str(res.__dict__)
     return error_str
+
+# Removed delete_erpnext_records_in_date_range() function
+# Re-sync mode does not delete existing records, only fills missing ones
+
+def check_re_sync_mode():
+    """Check and prepare for re-sync mode based on re_sync_data_date_range config
+    
+    Returns:
+        bool: True if re-sync mode is valid or not configured, False if configuration is invalid
+    """
+    try:
+        if not hasattr(config, 're_sync_data_date_range') or not config.re_sync_data_date_range:
+            return True  # No re-sync configured, continue normally
+        
+        if len(config.re_sync_data_date_range) != 2:
+            error_logger.error("re_sync_data_date_range must contain exactly 2 dates [start_date, end_date]")
+            return False
+        
+        start_date, end_date = config.re_sync_data_date_range
+        
+        # Validate date format
+        try:
+            datetime.datetime.strptime(start_date, "%Y%m%d")
+            datetime.datetime.strptime(end_date, "%Y%m%d")
+        except ValueError:
+            error_logger.error(f"Invalid date format in re_sync_data_date_range. Use YYYYMMDD format: {config.re_sync_data_date_range}")
+            return False
+        
+        print(f"\n🔄 RE-SYNC MODE: Processing all logs for date range {start_date} to {end_date}")
+        print("   - Will sync ALL logs in this period (not just new ones)")
+        print("   - Duplicate entries will be automatically skipped")
+        print("   - Purpose: Fill in any missing attendance logs")
+        info_logger.info(f"Re-sync mode activated for date range: {start_date} to {end_date}")
+        
+        return True
+            
+    except Exception as e:
+        error_logger.exception("Exception in check_re_sync_mode")
+        print(f"❌ Re-sync mode check failed: {str(e)}")
+        return False
+
+# Removed disable_re_sync_after_completion() function
+# User will manually set re_sync_data_date_range = [] after completion
 
 # setup logger and status
 if not os.path.exists(config.LOGS_DIRECTORY):

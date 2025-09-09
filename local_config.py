@@ -24,7 +24,7 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 # operational configs
 PULL_FREQUENCY = 3 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
-IMPORT_START_DATE = '20250726' # format: '20190501' , Kỳ lương tháng 8/25
+IMPORT_START_DATE = '20250826' # format: '20190501' , Kỳ lương tháng 9/25
 
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
@@ -46,10 +46,14 @@ devices = [
     # {'device_id':'Machine_10','ip':'10.0.1.50', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 ]
 devices_master =    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
-sync_from_master_device_to_erpnext_filters_id=['1666','1667']
+sync_from_master_device_to_erpnext_filters_id=['1669','1670']
 # sync_from_master_device_to_erpnext_filters_id=[] : sync all user IDs from master device to ERPNext
 # user_id_inorged - list of user IDs to be ignored / STRING : Tạp vụ
 user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005']
+re_sync_data_date_range = [] #=['20250907','20250907'] # ['YYYYMMDD','YYYYMMDD'] or [] for no filter
+# Add 'Employee Checkin'  between this date range on ERPNEXT, no error for dupplicate
+#  set to [] to disable this feature after use
+
 # FingerID	Code	Name
 # 55	NK-01	NK-01-HT Hien
 # 58	NK-02	NK-02-NT Thao

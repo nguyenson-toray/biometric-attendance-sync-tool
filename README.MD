@@ -1,462 +1,243 @@
 # Hệ Thống Đồng Bộ Chấm Công ERPNext
 
-Hệ thống đồng bộ tự động giữa máy chấm công sinh trắc học và ERPNext với khả năng bypass thời gian và auto-restart.
+Hệ thống đồng bộ tự động giữa máy chấm công sinh trắc học và ERPNext với khả năng bypass thời gian và tính năng re-sync.
 
 ## 📁 Cấu Trúc Thư Mục
 
 ```
 biometric-attendance-sync-tool/
-├── README.MD                                    # Tài liệu chính (tiếng Việt)
-├── README_SERVICE.md                            # Tài liệu dịch vụ (tiếng Anh)
-├── local_config.py                              # Cấu hình tĩnh + cấu hình động bypass
-├── erpnext_sync_all.py                          # Dịch vụ chính điều phối
+├── README.MD                                    # Tài liệu chính
+├── local_config.py                              # Cấu hình hệ thống
+├── erpnext_sync_all.py                          # Service chính
 ├── sync_log_from_device_to_erpnext.py          # Sync log chấm công từ thiết bị đến ERPNext
 ├── sync_user_info_from_erpnext_to_device.py    # Sync thông tin nhân viên từ ERPNext đến thiết bị
-├── sync_user_info_state.py                     # Quản lý trạng thái sync user info
-├── erpnext_api_client.py                       # Client API ERPNext
-├── test_finger_mapping_consistency.py          # Test script kiểm tra tính nhất quán finger mapping
-├── start_erpnext_sync_all_manual.sh            # Script khởi động service thủ công
-├── stop_erpnext_sync_all_manual.sh             # Script dừng service thủ công (force kill)
-├── status_erpnext_sync_all_manual.sh           # Script kiểm tra trạng thái service
-├── test_paths.sh                               # Script test đường dẫn
-├── requirements.txt                            # Danh sách dependencies
-├── set_up_requirement.sh                       # Script cài đặt dependencies và phân quyền
-└── logs/                                       # Thư mục chứa log
-    ├── service.log                             # Log dịch vụ chính
-    ├── service_error.log                       # Log lỗi dịch vụ
-    ├── logs.log                                # Log tổng quát
-    ├── error.log                               # Log lỗi
-    ├── attendance_success_log_*.log            # Log thành công theo thiết bị
-    ├── attendance_failed_log_*.log             # Log thất bại theo thiết bị
-    ├── user_id_ignored_log.txt                 # Log user bị bỏ qua
-    ├── error_duplicate.log                     # Log lỗi trùng lặp
-    └── sync_from_erpnext_to_device/           # Log sync user info
+├── start_erpnext_sync_all_manual.sh            # Script khởi động service
+├── stop_erpnext_sync_all_manual.sh             # Script dừng service
+├── status_erpnext_sync_all_manual.sh           # Script kiểm tra trạng thái
+├── set_up_requirement.sh                       # Script cài đặt dependencies
+└── logs/                                       # Thư mục chứa log files
 ```
 
-## ⚙️ Thuật Toán Hoạt Động
+## 🚀 Cách Sử Dụng
 
-### 🔄 Chu Kỳ Chính (Mỗi 3 phút)
-
-```mermaid
-graph TD
-    A[Khởi động Service] --> B[Load Cấu hình Động]
-    B --> C[Kiểm tra Bypass Time]
-    C --> D{Bypass Log Sync?}
-    D -->|Có| E[Bỏ qua Sync Log]
-    D -->|Không| F[Thực hiện Sync Log từ Device đến ERPNext]
-    E --> G{Bypass User Sync?}
-    F --> G
-    G -->|Có| H[Bỏ qua Sync User Info]
-    G -->|Không| I[Thực hiện Sync User Info từ ERPNext đến Device]
-    H --> J[Chờ 3 phút]
-    I --> K{Bypass Clear Left?}
-    K -->|Có| L[Bỏ qua xóa template nghỉ việc]
-    K -->|Không| M[Xóa template nhân viên nghỉ việc]
-    L --> J
-    M --> J
-    J --> B
-```
-
-### 🎯 Chi Tiết Các Bước
-
-**1. Sync Log từ Device đến ERPNext**
-- Kết nối với từng máy chấm công
-- Lấy dữ liệu chấm công mới
-- Gửi đến ERPNext API
-- Xử lý lỗi và retry
-- Ghi log thành công/thất bại
-
-**2. Sync User Info từ ERPNext đến Device**
-- Lấy danh sách nhân viên có thay đổi
-- **Normalize tên tiếng Việt**: `Nguyễn Văn A` → `Nguyen Van A` (device compatibility)
-- Phân loại: Active, Left, Changed
-- Sync template vân tay
-- Xóa template nhân viên nghỉ việc (nếu không bị bypass)
-
-**3. Time-based Bypass Logic**
-- **07:30-07:55**: Bypass tất cả (giờ vào ca sáng)
-- **17:00-17:30**: Bypass tất cả (giờ tan ca chiều)  
-- **00:00-22:00**: Bypass xóa template nghỉ việc
-
-## 🚀 Cách Cài Đặt và Chạy
-
-### Bước 1: Cài đặt Dependencies và Phân quyền
+### Bước 1: Cài đặt
 ```bash
-# Cài đặt dependencies trong virtual environment và set permissions
+# Cài đặt dependencies và phân quyền
 ./set_up_requirement.sh
 ```
 
-### Bước 2: Kiểm tra Đường dẫn
+### Bước 2: Khởi động Service
 ```bash
-# Kiểm tra tự động detect paths
-./test_paths.sh
-```
-
-### Bước 3: Khởi động Service Thủ công
-```bash
-# Khởi động service thủ công (không cần sudo)
+# Khởi động service
 ./start_erpnext_sync_all_manual.sh
-```
 
-### Bước 4: Kiểm tra Service hoạt động
-```bash
-# Kiểm tra trạng thái service
+# Kiểm tra trạng thái
 ./status_erpnext_sync_all_manual.sh
 
-# Dừng service (force kill tất cả processes)
+# Dừng service
 ./stop_erpnext_sync_all_manual.sh
 ```
 
-### Bước 5: Theo dõi Logs
+### Bước 3: Theo dõi Logs
 ```bash
-# Xem log realtime
-tail -f logs/service.log
+# Theo dõi log chính
+tail -f logs/logs.log
 
-# Xem tất cả logs
-tail -f logs/*.log
-```
-
-## 📊 Cách Kiểm tra Service
-
-### 🔍 Kiểm tra Trạng Thái Service
-
-```bash
-# Trạng thái tổng quan với chi tiết đầy đủ
-./status_erpnext_sync_all_manual.sh
-
-# Kiểm tra process đang chạy
-ps aux | grep 'erpnext_sync_all.py'
-
-# Kiểm tra PID file
-cat erpnext_sync_all.pid
-
-# Kiểm tra connectivity đến devices
-ping 10.0.1.48
-ping 10.0.1.50
-```
-
-### 📈 Theo dõi Hoạt động
-
-```bash
-# Theo dõi log service real-time
-tail -f logs/service.log
-
-# Theo dõi log errors
+# Theo dõi log lỗi
 tail -f logs/error.log
-
-# Theo dõi tất cả logs
-tail -f logs/*.log
-
-# Xem logs trong ngày
-grep "$(date +%Y-%m-%d)" logs/service.log
-
-# Kiểm tra device connectivity logs
-tail -f logs/attendance_success_log_*.log
 ```
 
-### ⚡ Test Manual
+## ⚙️ Cấu Hình Chính
 
-```bash
-# Test cấu hình
-venv/bin/python3 erpnext_sync_all.py --test-config
+Chỉnh sửa file `local_config.py`:
 
-# Xem status cấu hình  
-venv/bin/python3 erpnext_sync_all.py --status
+### 🔧 Cấu hình Cơ bản
+```python
+# Thông tin ERPNext
+ERPNEXT_URL = 'http://10.0.1.21'
+ERPNEXT_API_KEY = '7c5bab33922d7f6'
+ERPNEXT_API_SECRET = '2d379dbe1ef33ab'
 
-# Test 15 giây (dừng service trước)
-./stop_erpnext_sync_all_manual.sh
-timeout 15 venv/bin/python3 erpnext_sync_all.py
+# Tần suất đồng bộ (phút)
+PULL_FREQUENCY = 3
 
-# Chạy manual để debug
-./stop_erpnext_sync_all_manual.sh
-venv/bin/python3 erpnext_sync_all.py
+# Danh sách máy chấm công (hiện tại: Machine_1 đến Machine_7)
+devices = [
+    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # ... Machine_3 to Machine_7 (10.0.1.43-47)
+]
+
+# Master device cho sync fingerprints
+devices_master = {'device_id':'Machine_1','ip':'10.0.1.41', ...}
+
+# User IDs bị bỏ qua (tạp vụ)
+user_id_inorged = ['55','58','161','623','916','920','3000','3001','3002','6004','6005']
 ```
 
-## 📋 Cách Xem Log
-
-### 🗂️ Các File Log Chính
-
-1. **Service Log**
-   ```bash
-   # Log chính của service
-   tail -f logs/service.log
-   
-   # Log lỗi service
-   tail -f logs/service_error.log
-   ```
-
-2. **Application Log**  
-   ```bash
-   # Log tổng quát
-   tail -f logs/logs.log
-   
-   # Log lỗi ứng dụng
-   tail -f logs/error.log
-   ```
-
-3. **Sync Log**
-   ```bash
-   # Log thành công theo từng máy
-   tail -f logs/attendance_success_log_Machine_8.log
-   tail -f logs/attendance_success_log_Machine_10.log
-   
-   # Log thất bại theo từng máy
-   tail -f logs/attendance_failed_log_Machine_8.log
-   tail -f logs/attendance_failed_log_Machine_10.log
-   
-   # Log user bị ignore
-   tail -f logs/user_id_ignored_log.txt
-   
-   # Log duplicate timestamp
-   tail -f logs/error_duplicate.log
-   ```
-
-4. **User Sync Log**
-   ```bash
-   # Log sync user info
-   tail -f logs/sync_from_erpnext_to_device/sync_to_device.log
-   ```
-
-## 👆 Finger Mapping Utilities
-
-Hệ thống sử dụng **standardized finger mapping** để đảm bảo tính nhất quán giữa finger index và finger name:
-
-### **Finger Index Mapping:**
-```
-0: Left Little    5: Right Thumb
-1: Left Ring      6: Right Index  
-2: Left Middle    7: Right Middle
-3: Left Index     8: Right Ring
-4: Left Thumb     9: Right Little
-```
-
-### **Available Functions:**
-- `local_config.get_finger_name(finger_index)` - Chuyển index thành name
-- `local_config.get_finger_index(finger_name)` - Chuyển name thành index
-- `local_config.validate_finger_index(index)` - Validate finger index
-- `local_config.validate_finger_name(name)` - Validate finger name
-
-### **Consistency Testing:**
-```bash
-# Test tính nhất quán finger mapping toàn bộ codebase
-venv/bin/python3 test_finger_mapping_consistency.py
-```
-
-**🎯 Tất cả modules đều sử dụng finger mapping từ local_config.py để đảm bảo tính nhất quán!**
-
-## 🔤 Xử Lý Tên Tiếng Việt
-
-Hệ thống **luôn luôn** normalize tên tiếng Việt khi sync từ ERPNext đến device để đảm bảo tương thích:
-
-### **Ví dụ Name Normalization:**
-```
-Nguyễn Văn A        → Nguyen Van A
-Trần Thị Bích Thảo  → Tran Thi Bich Thao  
-Lê Hoàng Đức        → Le Hoang Duc
-Phạm Quỳnh Như      → Pham Quynh Nhu
-```
-
-### **Lý do:**
-- ✅ **Device compatibility**: Tránh lỗi hiển thị trên máy chấm công
-- ✅ **Character encoding**: Tránh conflict với device firmware
-- ✅ **Consistency**: Đồng nhất trên tất cả devices
-- ✅ **Reliability**: Giảm thiểu lỗi sync do special characters
-
-### **Implementation:**
-- Sử dụng thư viện `unidecode` 
-- Tự động fallback nếu không có unidecode
-- Apply cho tất cả employee names khi sync đến device
-
-### 🔎 Log Analysis Commands
-
-```bash
-# Đếm số lần sync thành công hôm nay
-grep "$(date +%Y-%m-%d)" logs/attendance_success_log_*.log | wc -l
-
-# Xem errors trong 24h qua
-grep "ERROR" logs/error.log | tail -50
-
-# Kiểm tra cycle frequency
-grep "CYCLE #" logs/service.log | tail -10
-
-# Xem bypass status
-grep "Cấu Hình Động" logs/service.log | tail -5
-
-# Tìm duplicate errors
-grep "DUPLICATE" logs/error_duplicate.log | tail -20
-
-# Performance monitoring  
-grep "completed.*in.*s" logs/service.log | tail -10
-```
-
-## ⚙️ Cấu Hình Bypass Time
-
-### 📝 Chỉnh sửa Bypass Periods trong `local_config.py`
+### 🔄 Tính năng Re-sync
+**Mục đích**: Bổ sung các log chấm công còn thiếu trong khoảng thời gian cụ thể.
 
 ```python
-# Bypass sync log từ device đến ERPNext (giờ rush)
+# Bật re-sync cho khoảng thời gian cụ thể
+re_sync_data_date_range = ['20250907','20250907']  # ['YYYYMMDD','YYYYMMDD']
+
+# Tắt re-sync (chế độ normal)
+re_sync_data_date_range = []
+```
+
+**Cách hoạt động**:
+- ✅ **Không xóa** dữ liệu có sẵn trong ERPNext
+- ✅ Sync **TẤT CẢ logs** từ máy chấm công trong khoảng thời gian
+- ✅ **Tự động bỏ qua duplicate** (không tạo error log)
+- ✅ Chỉ thêm các logs **còn thiếu** vào ERPNext
+
+**Workflow sử dụng**:
+1. Set `re_sync_data_date_range = ['20250907','20250907']`
+2. Chạy service: `./start_erpnext_sync_all_manual.sh`
+3. Sau khi hoàn thành, set `re_sync_data_date_range = []`
+
+### ⏰ Cấu hình Bypass Time (trong local_config.py)
+```python
+# Bypass sync log (giờ rush) - hiện tại: TẮT
 sync_log_by_pass_period = [
-    {"start": "07:30", "end": "07:55", "reason": "Morning rush"},
-    {"start": "17:00", "end": "17:30", "reason": "Evening rush"}
+    # {"start": "07:30", "end": "07:55", "reason": "Morning rush - employees clocking in"},
+    # {"start": "17:00", "end": "17:30", "reason": "Evening rush - employees clocking out"}
 ]
 
-# Bypass sync user info từ ERPNext đến device (giờ rush)  
+# Bypass sync user info (giờ rush) - hiện tại: TẮT
 sync_user_info_by_pass_period = [
-    {"start": "07:30", "end": "07:55", "reason": "Morning rush"},
-    {"start": "17:00", "end": "17:30", "reason": "Evening rush"}
+    # {"start": "07:30", "end": "07:55", "reason": "Morning rush - avoid device conflicts"},
+    # {"start": "17:00", "end": "17:30", "reason": "Evening rush - avoid device conflicts"}
 ]
 
-# Bypass xóa template nghỉ việc (chỉ cho phép sau 22:00)
-clear_left_user_template_by_pass_period = [
-    {"start": "00:00", "end": "22:00", "reason": "Working hours"}
-]
+# Bypass clear left templates - hiện tại: TẮT
+clear_left_user_template_by_pass_period = []
 ```
 
-### 🎛️ Feature Toggles
-
+### 🎛️ Feature Toggles (trong local_config.py)
 ```python
-# Bật/tắt chức năng sync user info
-ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = True
+# Bật/tắt sync thông tin nhân viên - hiện tại: TẮT
+ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
-# Bật/tắt chức năng xóa template nghỉ việc
-ENABLE_CLEAR_LEFT_USER_TEMPLATES = True
+# Bật/tắt clear left templates - hiện tại: TẮT  
+ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
 
 # Chế độ sync: 'auto', 'full', 'changed'
 SYNC_USER_INFO_MODE = 'auto'
-
-# Safety net: Số giờ quét ngược khi mất last_sync state
 SYNC_CHANGED_HOURS_BACK = 24
 ```
 
-### 📝 Chi tiết SYNC_CHANGED_HOURS_BACK
+## 📊 Giám sát Hệ thống
 
-**Mục đích**: Safety net (lưới an toàn) khi mất file state
-
-**Hoạt động bình thường (99.9% trường hợp):**
-- Service sync từ `last_sync` (3 phút trước)
-- SYNC_CHANGED_HOURS_BACK **KHÔNG** được sử dụng
-
-**Chỉ sử dụng khi khẩn cấp:**
-- 🔥 File state bị mất/corrupt (`logs/sync_from_erpnext_to_device/last_sync_global.json`)
-- 🔥 Lần đầu chạy sau khi xóa logs
-- 🔥 Service crash nhiều ngày
-- 🔥 Manual reset state
-
-**Ví dụ logic:**
-```python
-# Ưu tiên: Dùng last_sync từ file state (3 phút trước)
-since_datetime = self.sync_state.get_last_sync() or \
-                # Fallback: Quét ngược 24h thay vì full sync toàn bộ DB
-                (datetime.now() - timedelta(hours=24))
-```
-
-**Lợi ích**: Tránh full sync toàn bộ database khi có sự cố
-
-## 🛠️ Quản lý Service Manual
-
-### ▶️ Start/Stop/Status
-
+### 🔍 Kiểm tra Service
 ```bash
-# Khởi động service (với conflict detection)
-./start_erpnext_sync_all_manual.sh
-
-# Dừng service (force kill tất cả processes)
-./stop_erpnext_sync_all_manual.sh
-
-# Kiểm tra trạng thái service
+# Trạng thái tổng quan
 ./status_erpnext_sync_all_manual.sh
 
-# Khởi động lại (stop + start)
-./stop_erpnext_sync_all_manual.sh && ./start_erpnext_sync_all_manual.sh
+# Kiểm tra process
+ps aux | grep 'erpnext_sync_all.py'
+
+# Test cấu hình và bypass status
+python3 erpnext_sync_all.py --test-config
+python3 -c "import local_config; print(local_config.get_bypass_status())"
 ```
 
-### 🔧 Configuration Management
-
+### 📈 Log Analysis
 ```bash
-# Chỉnh sửa cấu hình
-nano local_config.py
+# Theo dõi hoạt động real-time
+tail -f logs/logs.log
 
-# Service sẽ tự động reload config mỗi 3 phút
-# Không cần restart - cấu hình động sẽ tự áp dụng
+# Đếm số lần sync thành công hôm nay
+grep "$(date +%Y-%m-%d)" logs/attendance_success_log_*.log | wc -l
 
-# Hoặc restart để áp dụng ngay
-./stop_erpnext_sync_all_manual.sh
-./start_erpnext_sync_all_manual.sh
+# Xem lỗi gần đây
+grep "ERROR" logs/error.log | tail -20
+
+# Kiểm tra re-sync mode
+grep "Re-sync mode" logs/logs.log | tail -5
 ```
 
-### 🔧 Setup và Permissions
+## 📋 Các File Log Quan trọng
 
 ```bash
-# Setup lại dependencies và permissions
-./set_up_requirement.sh
+# Log chính
+logs/logs.log                              # Tổng quát
+logs/error.log                             # Lỗi hệ thống
 
-# Manual permissions fix
-chmod +x *.sh
-chmod +x *.py
-chmod 755 logs/
+# Log theo máy chấm công
+logs/attendance_success_log_Machine_*.log  # Thành công theo máy
+logs/attendance_failed_log_Machine_*.log   # Thất bại theo máy
+
+# Log đặc biệt
+logs/user_id_inorged_log.txt               # User bị bỏ qua
+logs/error_duplicate.log                   # Duplicate (normal mode)
 ```
 
 ## 🚨 Xử Lý Lỗi Thường Gặp
 
-### 1. Service không khởi động được
+### 1. Service không khởi động
 ```bash
-# Kiểm tra trạng thái chi tiết
+# Kiểm tra chi tiết
 ./status_erpnext_sync_all_manual.sh
-
-# Kiểm tra file paths
-./test_paths.sh
 
 # Test cấu hình
 venv/bin/python3 erpnext_sync_all.py --test-config
 
-# Kiểm tra logs
+# Xem log lỗi
 tail -f logs/error.log
 ```
 
-### 2. Kết nối device thất bại
+### 2. Kết nối máy chấm công thất bại
 ```bash
-# Kiểm tra IP device trong local_config.py
-# Kiểm tra network connectivity
-ping 10.0.1.48
-ping 10.0.1.50
+# Test network
+ping 10.0.1.41
+ping 10.0.1.42
 
-# Status script tự động test connectivity
-./status_erpnext_sync_all_manual.sh
-
-# Xem log kết nối device
-grep "Device.*not reachable" logs/service.log
+# Xem log connectivity
+grep "Device.*not reachable" logs/logs.log
 ```
 
-### 3. ERPNext API errors
+### 3. ERPNext API lỗi
 ```bash
-# Kiểm tra API credentials trong local_config.py  
-# Test API connection
+# Test API
 curl -X GET "http://10.0.1.21/api/resource/Employee" \
   -H "Authorization: token 7c5bab33922d7f6:2d379dbe1ef33ab"
 
-# Xem API errors
+# Xem API errors  
 grep "ERPNext API" logs/error.log
 ```
 
-### 4. Performance Issues
-```bash
-# Kiểm tra thời gian cycle
-grep "completed.*in.*s" logs/service.log | tail -10
+## 🔤 Xử Lý Tên Tiếng Việt
 
-# Monitor resource usage
-htop -p $(pgrep -f erpnext_sync_all)
+Hệ thống tự động normalize tên tiếng Việt khi sync từ ERPNext đến máy chấm công:
 
-# Kiểm tra disk space cho logs
-du -h logs/
+```
+Nguyễn Văn A    → Nguyen Van A
+Trần Thị Bích   → Tran Thi Bich  
+Lê Hoàng Đức    → Le Hoang Duc
 ```
 
-## 📞 Support
+**Lý do**: Đảm bảo tương thích với firmware máy chấm công.
 
-- **Kiểm tra trạng thái**: `./status_erpnext_sync_all_manual.sh`
-- **Xem log chi tiết**: `tail -f logs/service.log`
-- **Test cấu hình**: `venv/bin/python3 erpnext_sync_all.py --test-config`  
-- **Debug manual**: `./stop_erpnext_sync_all_manual.sh && venv/bin/python3 erpnext_sync_all.py`
-- **Path detection**: `./test_paths.sh`
-- **Setup lại**: `./set_up_requirement.sh`
+## 📞 Hỗ trợ
+
+### Commands Hữu ích
+```bash
+# Kiểm tra trạng thái
+./status_erpnext_sync_all_manual.sh
+
+# Debug manual
+./stop_erpnext_sync_all_manual.sh
+venv/bin/python3 erpnext_sync_all.py
+
+# Setup lại
+./set_up_requirement.sh
+```
 
 ---
+
+**🎯 Lưu ý**: 
+- Service tự động reload config mỗi 3 phút
+- Re-sync mode: Dùng để bổ sung logs thiếu, set `[]` sau khi xong
+- Bypass time: Tránh conflict trong giờ rush

@@ -41,6 +41,16 @@ class ERPNextSyncService:
         print(f"Started at: {self.start_time}")
         print(f"Pull frequency: {local_config.PULL_FREQUENCY} minutes")
         print(f"Working directory: {current_dir}")
+        
+        # Display re-sync configuration if available
+        if hasattr(local_config, 're_sync_data_date_range') and local_config.re_sync_data_date_range:
+            print(f"🔄 RE-SYNC MODE: Date range {local_config.re_sync_data_date_range[0]} to {local_config.re_sync_data_date_range[1]}")
+            print("   - Will sync ALL logs in this period to fill missing entries")
+            print("   - Duplicate entries will be automatically skipped (no error logs)")
+            print("   - Existing records will NOT be deleted")
+        else:
+            print("📅 NORMAL MODE: Processing only new attendance logs")
+            
         print("=" * 80)
     
     def signal_handler(self, signum, _frame):
@@ -306,6 +316,15 @@ def main():
         print(f"  Pull frequency: {local_config.PULL_FREQUENCY} minutes")
         print(f"  ERPNext URL: {local_config.ERPNEXT_URL}")
         print(f"  Number of devices: {len(local_config.devices)}")
+        
+        # Display re-sync status
+        if hasattr(local_config, 're_sync_data_date_range') and local_config.re_sync_data_date_range:
+            print(f"  🔄 Re-sync mode: ENABLED")
+            print(f"    Date range: {local_config.re_sync_data_date_range[0]} to {local_config.re_sync_data_date_range[1]}")
+            print(f"    Action: Sync ALL logs in this period (fill missing entries)")
+        else:
+            print(f"  📅 Re-sync mode: DISABLED (normal processing)")
+            
         local_config.log_bypass_status()
         return
     
