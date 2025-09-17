@@ -1,0 +1,47 @@
+[Unit]
+Description=ERPNext Biometric Attendance Sync Service
+Documentation=man:erpnext_sync_all.py
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=frappe
+Group=frappe
+WorkingDirectory=/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool
+ExecStart=/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool/service_wrapper.sh
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Auto-restart configuration
+RestartKillSignal=SIGTERM
+KillMode=mixed
+TimeoutSec=30
+
+# Logging configuration
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=erpnext-sync-all
+
+# Security and environment
+Environment=PATH=/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool/venv/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
+Environment=PYTHONPATH=/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool
+Environment=HOME=/home/frappe
+Environment=LANG=en_US.UTF-8
+Environment=LC_ALL=en_US.UTF-8
+
+# Network access configuration
+PrivateNetwork=false
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressAllow=any
+
+# Disable restrictive security for network access
+# PrivateTmp=true
+# NoNewPrivileges=true
+ProtectSystem=false
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

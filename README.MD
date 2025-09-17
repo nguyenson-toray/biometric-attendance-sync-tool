@@ -76,6 +76,8 @@ user_id_inorged = ['55','58','161','623','916','920','3000','3001','3002','6004'
 ```
 
 ### 🔄 Tính năng Re-sync
+
+#### **Manual Re-sync**
 **Mục đích**: Bổ sung các log chấm công còn thiếu trong khoảng thời gian cụ thể.
 
 ```python
@@ -96,6 +98,42 @@ re_sync_data_date_range = []
 1. Set `re_sync_data_date_range = ['20250907','20250907']`
 2. Chạy service: `./start_erpnext_sync_all_manual.sh`
 3. Sau khi hoàn thành, set `re_sync_data_date_range = []`
+
+#### **🌙 End-of-Day Auto Re-sync** ⭐ **NEW**
+**Mục đích**: Tự động re-sync toàn bộ logs trong ngày vào thời điểm cuối ngày để đảm bảo không thiếu dữ liệu.
+
+```python
+# Cấu hình End-of-Day Re-sync
+ENABLE_END_OF_DAY_RESYNC = True          # Bật/tắt tính năng
+END_OF_DAY_RESYNC_HOUR = 23              # Giờ thực hiện (0-23)
+END_OF_DAY_RESYNC_MINUTE = 30            # Phút thực hiện (0-59)
+END_OF_DAY_RESYNC_WINDOW_MINUTES = 10    # Cửa sổ thời gian ±5 phút
+END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Log riêng cho re-sync
+```
+
+**🚀 Tính năng**:
+- ✅ **Tự động chạy** mỗi ngày vào thời điểm cấu hình (mặc định 23:30)
+- ✅ **Re-sync toàn bộ logs** trong ngày hiện tại từ tất cả máy chấm công
+- ✅ **Bỏ qua tất cả bypass periods** để đảm bảo sync hoàn chỉnh
+- ✅ **Log riêng biệt** trong `logs/logs_resync.log`
+- ✅ **Filter duplicate errors** tự động, chỉ giữ log quan trọng
+- ✅ **Comprehensive logging** với status chi tiết và duration
+
+**🔍 Cách hoạt động**:
+1. **Every cycle**: Service kiểm tra thời gian hiện tại
+2. **At target time** (ví dụ 23:25-23:35): Trigger end-of-day re-sync
+3. **Auto setup**: Tự động set `re_sync_data_date_range = [today, today]`
+4. **Force sync**: Bỏ qua tất cả bypass logic, force kết nối tất cả devices
+5. **Auto restore**: Khôi phục cấu hình gốc sau khi hoàn thành
+
+**📋 Log Monitoring**:
+```bash
+# Theo dõi end-of-day re-sync
+tail -f logs/logs_resync.log
+
+# Kiểm tra lịch sử re-sync
+grep "END-OF-DAY RE-SYNC CYCLE" logs/logs_resync.log
+```
 
 ### ⏰ Cấu hình Bypass Time (trong local_config.py)
 ```python
@@ -126,6 +164,11 @@ ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
 # Chế độ sync: 'auto', 'full', 'changed'
 SYNC_USER_INFO_MODE = 'auto'
 SYNC_CHANGED_HOURS_BACK = 24
+
+# End-of-Day Auto Re-sync (NEW) - hiện tại: BẬT
+ENABLE_END_OF_DAY_RESYNC = True
+END_OF_DAY_RESYNC_HOUR = 23
+END_OF_DAY_RESYNC_MINUTE = 30
 ```
 
 ## 📊 Giám sát Hệ thống
@@ -148,6 +191,9 @@ python3 -c "import local_config; print(local_config.get_bypass_status())"
 # Theo dõi hoạt động real-time
 tail -f logs/logs.log
 
+# Theo dõi end-of-day re-sync (NEW)
+tail -f logs/logs_resync.log
+
 # Đếm số lần sync thành công hôm nay
 grep "$(date +%Y-%m-%d)" logs/attendance_success_log_*.log | wc -l
 
@@ -156,6 +202,12 @@ grep "ERROR" logs/error.log | tail -20
 
 # Kiểm tra re-sync mode
 grep "Re-sync mode" logs/logs.log | tail -5
+
+# Kiểm tra lịch sử end-of-day re-sync (NEW)
+grep "END-OF-DAY RE-SYNC CYCLE" logs/logs_resync.log
+
+# Thống kê end-of-day re-sync (NEW)
+grep "COMPLETED" logs/logs_resync.log | grep -E "(SUCCESSFULLY|WITH ERRORS)"
 ```
 
 ## 📋 Các File Log Quan trọng
@@ -164,6 +216,7 @@ grep "Re-sync mode" logs/logs.log | tail -5
 # Log chính
 logs/logs.log                              # Tổng quát
 logs/error.log                             # Lỗi hệ thống
+logs/logs_resync.log                       # End-of-day re-sync (NEW)
 
 # Log theo máy chấm công
 logs/attendance_success_log_Machine_*.log  # Thành công theo máy
@@ -238,6 +291,8 @@ venv/bin/python3 erpnext_sync_all.py
 ---
 
 **🎯 Lưu ý**: 
-- Service tự động reload config mỗi 3 phút
-- Re-sync mode: Dùng để bổ sung logs thiếu, set `[]` sau khi xong
+- Service tự động reload config mỗi 5 phút
+- Manual re-sync: Dùng để bổ sung logs thiếu, set `[]` sau khi xong
+- End-of-day auto re-sync: Tự động chạy mỗi ngày để đảm bảo đầy đủ dữ liệu
 - Bypass time: Tránh conflict trong giờ rush
+- Log monitoring: Theo dõi `logs/logs_resync.log` để xem kết quả end-of-day re-sync

@@ -50,6 +50,15 @@ class ERPNextSyncService:
             print("   - Existing records will NOT be deleted")
         else:
             print("📅 NORMAL MODE: Processing only new attendance logs")
+        
+        # Display end-of-day re-sync configuration
+        if local_config.ENABLE_END_OF_DAY_RESYNC:
+            print(f"🌙 END-OF-DAY RE-SYNC: ENABLED")
+            print(f"   - Schedule: {local_config.END_OF_DAY_RESYNC_HOUR:02d}:{local_config.END_OF_DAY_RESYNC_MINUTE:02d} daily")
+            print(f"   - Window: ±{local_config.END_OF_DAY_RESYNC_WINDOW_MINUTES//2} minutes")
+            print(f"   - Will re-sync ALL logs for current day")
+        else:
+            print(f"🌙 END-OF-DAY RE-SYNC: DISABLED")
             
         print("=" * 80)
     
@@ -68,25 +77,34 @@ class ERPNextSyncService:
             print(f"✗ Failed to reload dynamic config: {e}")
             return False
     
-    def execute_erpnext_sync(self, bypass_device_connection=False):
+    def execute_erpnext_sync(self, bypass_device_connection=False, force_resync=False):
         """Execute erpnext_sync.py with optional device bypass"""
         try:
-            print(f"\n[{datetime.datetime.now()}] Starting ERPNext sync...")
+            if force_resync:
+                print(f"\n[{datetime.datetime.now()}] Starting FORCED ERPNext sync (End-of-day re-sync)...")
+            else:
+                print(f"\n[{datetime.datetime.now()}] Starting ERPNext sync...")
             
             # Import and execute sync_log_from_device_to_erpnext functionality
             import sync_log_from_device_to_erpnext
             
-            if bypass_device_connection:
+            if bypass_device_connection and not force_resync:
                 print("⚠ Device connection bypassed - skipping device data fetch")
                 return True
             else:
                 # Execute single cycle (avoid infinite loop)
                 success = sync_log_from_device_to_erpnext.run_single_cycle(bypass_device_connection=bypass_device_connection)
                 if success:
-                    print("✓ Sync log từ device đến ERPNext hoàn thành")
+                    if force_resync:
+                        print("✓ FORCED Sync log từ device đến ERPNext hoàn thành")
+                    else:
+                        print("✓ Sync log từ device đến ERPNext hoàn thành")
                     return True
                 else:
-                    print("✗ Sync log từ device đến ERPNext thất bại")
+                    if force_resync:
+                        print("✗ FORCED Sync log từ device đến ERPNext thất bại")
+                    else:
+                        print("✗ Sync log từ device đến ERPNext thất bại")
                     return False
                 
         except Exception as e:
@@ -98,16 +116,16 @@ class ERPNextSyncService:
         """Execute sync_user_info_from_erpnext_to_device with optional bypass for clear left templates"""
         try:
             print(f"\n[{datetime.datetime.now()}] Bắt đầu sync user info từ ERPNext đến devices...")
-            
+
             # Import the sync module
             from sync_user_info_from_erpnext_to_device import ERPNextSyncToDeviceStandalone
-            
+
             # Create sync instance
             sync_tool = ERPNextSyncToDeviceStandalone()
-            
+
             # Determine sync mode based on dynamic config
             sync_mode = local_config.SYNC_USER_INFO_MODE
-            
+
             if sync_mode == 'full':
                 print("  Chế độ: Full sync")
                 result = sync_tool.sync_full()
@@ -119,10 +137,10 @@ class ERPNextSyncService:
             else:  # auto mode
                 print("  Chế độ: Auto sync")
                 result = sync_tool.auto_sync()
-            
+
             if bypass_clear_left:
                 print("⚠ Xóa template nhân viên nghỉ việc bị bỏ qua do giới hạn thời gian")
-            
+
             if result["success"]:
                 print("✓ Sync user info từ ERPNext đến devices hoàn thành")
                 print(f"  {result.get('message', 'Không có chi tiết')}")
@@ -130,9 +148,54 @@ class ERPNextSyncService:
             else:
                 print(f"✗ Sync user info từ ERPNext đến devices thất bại: {result.get('message', 'Lỗi không xác định')}")
                 return False
-                
+
         except Exception as e:
             print(f"✗ Sync user info từ ERPNext đến devices thất bại: {e}")
+            print(f"  Chi tiết lỗi: {traceback.format_exc()}")
+            return False
+
+    def execute_time_sync(self):
+        """Execute time synchronization from server to devices"""
+        try:
+            print(f"\n[{datetime.datetime.now()}] Bắt đầu đồng bộ giờ từ server đến devices...")
+
+            # Check if time sync is enabled
+            if not local_config.ENABLE_TIME_SYNC:
+                print("  Time sync disabled in configuration")
+                return True
+
+            # Execute time sync
+            results = local_config.sync_time_to_devices()
+
+            # Display results
+            print(f"📊 TIME SYNC SUMMARY:")
+            print(f"   Total devices: {results['total_devices']}")
+            print(f"   Successfully synced: {results['success_count']}")
+            print(f"   Skipped (within tolerance): {results['skipped_count']}")
+            print(f"   Failed: {results['failed_count']}")
+
+            # Show details for failed or synced devices
+            for detail in results['details']:
+                if detail['success'] and detail['new_time']:
+                    time_diff = detail['time_diff_seconds']
+                    print(f"   ✅ {detail['device_id']}: Synced (diff: {time_diff:.1f}s)")
+                elif detail['success'] and not detail['new_time']:
+                    time_diff = detail['time_diff_seconds']
+                    print(f"   ⏭️ {detail['device_id']}: Skipped (diff: {time_diff:.1f}s)")
+                else:
+                    print(f"   ❌ {detail['device_id']}: {detail['message']}")
+
+            # Consider success if at least some devices were processed
+            success_or_skipped = results['success_count'] + results['skipped_count']
+            if success_or_skipped > 0:
+                print("✓ Time sync hoàn thành")
+                return True
+            else:
+                print("⚠ Time sync hoàn thành nhưng không có device nào được sync")
+                return False
+
+        except Exception as e:
+            print(f"✗ Time sync thất bại: {e}")
             print(f"  Chi tiết lỗi: {traceback.format_exc()}")
             return False
     
@@ -140,6 +203,10 @@ class ERPNextSyncService:
         """Execute one complete sync cycle"""
         cycle_start = datetime.datetime.now()
         self.cycle_count += 1
+        
+        # Check if this should be an end-of-day re-sync cycle
+        if local_config.should_run_end_of_day_resync():
+            return self.execute_end_of_day_resync_cycle()
         
         print("\n" + "🔄" * 40)
         print(f"CYCLE #{self.cycle_count} - {cycle_start}")
@@ -206,6 +273,179 @@ class ERPNextSyncService:
             self.last_error = cycle_end
         
         return cycle_success
+    
+    def execute_end_of_day_resync_cycle(self):
+        """Execute end-of-day comprehensive re-sync cycle"""
+        cycle_start = datetime.datetime.now()
+        self.cycle_count += 1
+        
+        # Initialize re-sync logging
+        local_config.log_resync_operation("=" * 80)
+        local_config.log_resync_operation(f"🌙 END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} STARTED")
+        local_config.log_resync_operation(f"🌙 Start time: {cycle_start}")
+        local_config.log_resync_operation("=" * 80)
+        
+        print("\n" + "🌙" * 60)
+        print(f"END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} - {cycle_start}")
+        print("🌙" * 60)
+        
+        # Reload dynamic configuration
+        if not self.reload_dynamic_config():
+            print("⚠ Using previous dynamic configuration")
+        
+        # Backup original re-sync configuration
+        original_resync_config = getattr(local_config, 're_sync_data_date_range', [])
+        
+        try:
+            # Set re-sync range for today
+            today_range = local_config.get_end_of_day_resync_date_range()
+            local_config.re_sync_data_date_range = today_range
+            
+            # Log configuration to dedicated re-sync log
+            local_config.log_resync_operation(f"🔄 RE-SYNC CONFIGURATION:")
+            local_config.log_resync_operation(f"   - Target date: {today_range[0]}")
+            local_config.log_resync_operation(f"   - Mode: COMPREHENSIVE (ignoring bypass periods)")
+            local_config.log_resync_operation(f"   - Original config backup: {original_resync_config}")
+            local_config.log_resync_operation(f"   - Will sync ALL logs from ALL devices for today")
+            local_config.log_resync_operation(f"   - Dedicated log file: {local_config.END_OF_DAY_RESYNC_LOG_FILE}")
+            
+            print(f"🔄 RE-SYNC CONFIGURATION:")
+            print(f"   - Target date: {today_range[0]}")
+            print(f"   - Mode: COMPREHENSIVE (ignoring bypass periods)")
+            print(f"   - Original config backup: {original_resync_config}")
+            print(f"   - Will sync ALL logs from ALL devices for today")
+            print(f"   - Dedicated log file: {local_config.END_OF_DAY_RESYNC_LOG_FILE}")
+            
+            cycle_success = True
+            
+            # =====================================================================
+            # FORCED SYNC: ERPNext Sync (get logs from devices) - NO BYPASS
+            # =====================================================================
+            
+            print(f"\n[🌙 END-OF-DAY] FORCED Sync Log từ Device đến ERPNext")
+            print("   ⚠ BYPASSING all time-based restrictions")
+            print("   ⚠ FORCING connection to all devices")
+            
+            # Log to dedicated re-sync log
+            local_config.log_resync_operation("🚀 STARTING FORCED SYNC FROM DEVICES TO ERPNEXT")
+            local_config.log_resync_operation("   ⚠ BYPASSING all time-based restrictions")
+            local_config.log_resync_operation("   ⚠ FORCING connection to all devices")
+            local_config.log_resync_operation("   📋 Will filter duplicate error logs automatically")
+            
+            local_config.log_operation_decision(
+                "END-OF-DAY Sync Log từ Device đến ERPNext", 
+                True, 
+                "Comprehensive end-of-day re-sync - ignoring all bypass periods"
+            )
+            
+            if not self.execute_erpnext_sync(bypass_device_connection=False, force_resync=True):
+                cycle_success = False
+                print("✗ End-of-day sync failed - but continuing with summary")
+                local_config.log_resync_operation("❌ End-of-day sync FAILED - check main logs for details", "ERROR")
+            else:
+                local_config.log_resync_operation("✅ End-of-day sync COMPLETED successfully")
+            
+            # =====================================================================
+            # OPTIONAL: User Info Sync (if enabled)
+            # =====================================================================
+
+            if local_config.ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE:
+                print(f"\n[🌙 END-OF-DAY] User Info Sync từ ERPNext đến Device")
+                print("   ℹ Using normal bypass logic for user sync")
+
+                user_bypass, user_period = local_config.should_bypass_user_info_sync()
+
+                if user_bypass:
+                    reason = user_period.get('reason', 'Time-based bypass')
+                    local_config.log_operation_decision("END-OF-DAY User Info Sync", False, reason)
+                else:
+                    clear_bypass, clear_period = local_config.should_bypass_clear_left_templates()
+
+                    local_config.log_operation_decision("END-OF-DAY User Info Sync", True, "Normal user sync logic")
+                    if clear_bypass:
+                        clear_reason = clear_period.get('reason', 'Time-based bypass for clear left templates')
+                        print(f"  Ghi chú: {clear_reason}")
+
+                    if not self.execute_sync_user_info_from_erpnext_to_device(bypass_clear_left=clear_bypass):
+                        print("⚠ User info sync failed during end-of-day cycle")
+            else:
+                local_config.log_operation_decision("END-OF-DAY User Info Sync", False, "Chức năng bị tắt")
+
+            # =====================================================================
+            # OPTIONAL: Time Sync (if enabled)
+            # =====================================================================
+
+            if local_config.ENABLE_TIME_SYNC and local_config.TIME_SYNC_WITH_END_OF_DAY:
+                print(f"\n[🌙 END-OF-DAY] Time Sync từ Server đến Devices")
+                print("   🕒 Synchronizing server time to all biometric devices")
+
+                local_config.log_operation_decision("END-OF-DAY Time Sync", True, "End-of-day time synchronization")
+                local_config.log_resync_operation("🕒 STARTING TIME SYNC FROM SERVER TO DEVICES")
+                local_config.log_resync_operation("   📋 Will sync time to all configured devices")
+
+                if not self.execute_time_sync():
+                    print("⚠ Time sync failed during end-of-day cycle")
+                    local_config.log_resync_operation("❌ Time sync FAILED during end-of-day cycle", "ERROR")
+                else:
+                    local_config.log_resync_operation("✅ Time sync COMPLETED successfully during end-of-day cycle")
+            else:
+                local_config.log_operation_decision("END-OF-DAY Time Sync", False, "Time sync disabled or not configured for end-of-day")
+            
+            # =====================================================================
+            # END-OF-DAY CYCLE SUMMARY
+            # =====================================================================
+            
+            cycle_end = datetime.datetime.now()
+            cycle_duration = (cycle_end - cycle_start).total_seconds()
+            
+            # Log final results to dedicated re-sync log
+            local_config.log_resync_operation("=" * 80)
+            if cycle_success:
+                local_config.log_resync_operation(f"✅ END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} COMPLETED SUCCESSFULLY")
+                local_config.log_resync_operation(f"  Duration: {cycle_duration:.1f}s")
+                local_config.log_resync_operation(f"  Date range synced: {today_range[0]} to {today_range[1]}")
+                local_config.log_resync_operation(f"  All devices processed with bypass override")
+            else:
+                local_config.log_resync_operation(f"❌ END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} COMPLETED WITH ERRORS")
+                local_config.log_resync_operation(f"  Duration: {cycle_duration:.1f}s")
+                local_config.log_resync_operation(f"  Date range attempted: {today_range[0]} to {today_range[1]}")
+                local_config.log_resync_operation(f"  Check main logs for error details")
+            local_config.log_resync_operation(f"🌙 End time: {cycle_end}")
+            local_config.log_resync_operation("=" * 80)
+            
+            print("\n" + "🌙" * 60)
+            if cycle_success:
+                print(f"✓ END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} COMPLETED SUCCESSFULLY")
+                print(f"  Duration: {cycle_duration:.1f}s")
+                print(f"  Date range synced: {today_range[0]} to {today_range[1]}")
+                print(f"  All devices processed with bypass override")
+                print(f"  📋 Detailed logs: {local_config.END_OF_DAY_RESYNC_LOG_FILE}")
+            else:
+                print(f"✗ END-OF-DAY RE-SYNC CYCLE #{self.cycle_count} COMPLETED WITH ERRORS")
+                print(f"  Duration: {cycle_duration:.1f}s") 
+                print(f"  Date range attempted: {today_range[0]} to {today_range[1]}")
+                print(f"  Check logs above for error details")
+                print(f"  📋 Detailed logs: {local_config.END_OF_DAY_RESYNC_LOG_FILE}")
+                self.error_count += 1
+                self.last_error = cycle_end
+            print("🌙" * 60)
+            
+            return cycle_success
+            
+        except Exception as e:
+            print(f"✗ CRITICAL ERROR in end-of-day re-sync cycle: {e}")
+            print(f"  Error details: {traceback.format_exc()}")
+            local_config.log_resync_operation(f"💥 CRITICAL ERROR in end-of-day re-sync cycle: {e}", "ERROR")
+            local_config.log_resync_operation(f"  Error details: {traceback.format_exc()}", "ERROR")
+            self.error_count += 1
+            self.last_error = datetime.datetime.now()
+            return False
+            
+        finally:
+            # Always restore original configuration
+            local_config.re_sync_data_date_range = original_resync_config
+            local_config.log_resync_operation(f"🔄 Restored original re-sync config: {original_resync_config}")
+            print(f"🔄 Restored original re-sync config: {original_resync_config}")
     
     def run(self):
         """Main service loop"""
@@ -324,6 +564,23 @@ def main():
             print(f"    Action: Sync ALL logs in this period (fill missing entries)")
         else:
             print(f"  📅 Re-sync mode: DISABLED (normal processing)")
+        
+        # Display end-of-day re-sync status
+        if local_config.ENABLE_END_OF_DAY_RESYNC:
+            print(f"  🌙 End-of-day re-sync: ENABLED")
+            print(f"    Schedule: {local_config.END_OF_DAY_RESYNC_HOUR:02d}:{local_config.END_OF_DAY_RESYNC_MINUTE:02d} daily (±{local_config.END_OF_DAY_RESYNC_WINDOW_MINUTES//2}min)")
+            print(f"    Next check: Every {local_config.PULL_FREQUENCY} minutes")
+        else:
+            print(f"  🌙 End-of-day re-sync: DISABLED")
+
+        # Display time sync status
+        if local_config.ENABLE_TIME_SYNC:
+            print(f"  🕒 Time sync: ENABLED")
+            print(f"    With end-of-day: {'YES' if local_config.TIME_SYNC_WITH_END_OF_DAY else 'NO'}")
+            print(f"    Sync threshold: {local_config.TIME_SYNC_MAX_DIFF_SECONDS}s")
+            print(f"    Connection timeout: {local_config.TIME_SYNC_TIMEOUT_SECONDS}s")
+        else:
+            print(f"  🕒 Time sync: DISABLED")
             
         local_config.log_bypass_status()
         return

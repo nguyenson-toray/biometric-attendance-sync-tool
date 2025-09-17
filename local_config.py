@@ -2,9 +2,9 @@ import datetime
 # ERPNext related configs
 
 ERPNEXT_VERSION = 15 
-SERVER_NAME = 'erp.tiqn.local' 
+SERVER_NAME = '10.0.1.20' 
 ERPNEXT_API_KEY = '7c5bab33922d7f6'  
-ERPNEXT_API_SECRET = '0ac0d04cbda63b9' 
+ERPNEXT_API_SECRET = '5df993705d12dd4' 
 
 
 # Site Sonnt
@@ -22,7 +22,7 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 
 
 # operational configs
-PULL_FREQUENCY = 3 # in minutes
+PULL_FREQUENCY = 5 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
 IMPORT_START_DATE = '20250826' # format: '20190501' , Kỳ lương tháng 9/25
 
@@ -46,14 +46,32 @@ devices = [
     # {'device_id':'Machine_10','ip':'10.0.1.50', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 ]
 devices_master =    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
-sync_from_master_device_to_erpnext_filters_id=['1669','1670']
+sync_from_master_device_to_erpnext_filters_id=[]
+# sync_from_master_device_to_erpnext_filters_id=['1687','1688','1689','1690','1691','1692','1693','1694','1695']
 # sync_from_master_device_to_erpnext_filters_id=[] : sync all user IDs from master device to ERPNext
 # user_id_inorged - list of user IDs to be ignored / STRING : Tạp vụ
 user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005']
-re_sync_data_date_range = [] #=['20250907','20250907'] # ['YYYYMMDD','YYYYMMDD'] or [] for no filter
+re_sync_data_date_range = [] #=['from date','to date'] ['20250915','20250917'] ,  'YYYYMMDD'  or [] for no filter
 # Add 'Employee Checkin'  between this date range on ERPNEXT, no error for dupplicate
 #  set to [] to disable this feature after use
+# Feature toggles
+ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
+ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
+SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
+SYNC_CHANGED_HOURS_BACK = 24
+# End-of-day re-sync configuration
+ENABLE_END_OF_DAY_RESYNC = True
+END_OF_DAY_RESYNC_HOUR = 21
+END_OF_DAY_RESYNC_MINUTE = 30
+END_OF_DAY_RESYNC_WINDOW_MINUTES = 10  # ±5 phút từ thời điểm mục tiêu
+END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Dedicated log file for re-sync operations
 
+# Time synchronization configuration
+ENABLE_TIME_SYNC = True  # Enable time sync to devices
+TIME_SYNC_WITH_END_OF_DAY = True  # Sync time during end-of-day process
+TIME_SYNC_MAX_DIFF_SECONDS = 10  # Only sync if time difference > 60 seconds
+TIME_SYNC_TIMEOUT_SECONDS = 10  # Connection timeout for time sync
+TIME_SYNC_LOG_FILE = 'logs/time_sync.log'  # Dedicated log file for time sync operations
 # FingerID	Code	Name
 # 55	NK-01	NK-01-HT Hien
 # 58	NK-02	NK-02-NT Thao
@@ -156,11 +174,7 @@ clear_left_user_template_by_pass_period = [
     # {"start": "00:00", "end": "22:00", "reason": "Working hours - delay template cleanup until after 22:00"}
 ]
 
-# Feature toggles
-ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
-ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
-SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
-SYNC_CHANGED_HOURS_BACK = 24
+
 
 def should_bypass_log_sync():
     """Check if should bypass log sync to ERPNext"""
@@ -248,6 +262,99 @@ def log_operation_decision(operation, will_execute, reason=""):
     print(f"[{timestamp}] {operation}: {status}")
     if reason:
         print(f"    Lý do: {reason}")
+
+def should_run_end_of_day_resync():
+    """Check if should run end-of-day re-sync based on current time"""
+    if not ENABLE_END_OF_DAY_RESYNC:
+        return False
+    
+    current_time = datetime.datetime.now()
+    
+    # Check if we're in the target time window
+    target_hour = END_OF_DAY_RESYNC_HOUR
+    target_minute = END_OF_DAY_RESYNC_MINUTE
+    window_minutes = END_OF_DAY_RESYNC_WINDOW_MINUTES // 2  # ±5 minutes
+    
+    # Create target time for today
+    target_time = current_time.replace(
+        hour=target_hour, 
+        minute=target_minute, 
+        second=0, 
+        microsecond=0
+    )
+    
+    # Calculate time difference in minutes
+    time_diff_minutes = abs((current_time - target_time).total_seconds()) / 60
+    
+    # Check if we're within the window
+    if time_diff_minutes <= window_minutes:
+        return True
+    
+    return False
+
+def get_end_of_day_resync_date_range():
+    """Get date range for end-of-day re-sync (today only)"""
+    today = datetime.datetime.now().strftime('%Y%m%d')
+    return [today, today]
+
+def setup_resync_logger():
+    """Setup dedicated logger for end-of-day re-sync operations"""
+    import logging
+    import os
+    
+    # Create logs directory if it doesn't exist
+    os.makedirs('logs', exist_ok=True)
+    
+    # Create dedicated logger for re-sync
+    logger = logging.getLogger('resync_logger')
+    logger.setLevel(logging.INFO)
+    
+    # Remove existing handlers to avoid duplicate logging
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # Create file handler for re-sync logs
+    file_handler = logging.FileHandler(END_OF_DAY_RESYNC_LOG_FILE, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s\t%(levelname)s\t%(message)s')
+    file_handler.setFormatter(formatter)
+    
+    # Add handler to logger
+    logger.addHandler(file_handler)
+    
+    # Prevent propagation to root logger to avoid duplicate entries
+    logger.propagate = False
+    
+    return logger
+
+def log_resync_operation(message, level='INFO'):
+    """Log re-sync operation to dedicated log file"""
+    try:
+        logger = setup_resync_logger()
+        if level.upper() == 'ERROR':
+            logger.error(message)
+        elif level.upper() == 'WARNING':
+            logger.warning(message)
+        else:
+            logger.info(message)
+    except Exception as e:
+        print(f"Failed to log re-sync operation: {e}")
+
+def should_skip_duplicate_log(message):
+    """Check if this is a duplicate error that should be skipped in re-sync logs"""
+    skip_patterns = [
+        'Re-sync mode: Skipping duplicate',
+        'Duplicate Employee Checkin found',
+        'already exists for employee',
+        'DuplicateEntryError'
+    ]
+    
+    for pattern in skip_patterns:
+        if pattern.lower() in message.lower():
+            return True
+    return False
 
 def validate_time_periods():
     """Validate that time periods are properly formatted"""
@@ -351,10 +458,10 @@ def validate_finger_index(finger_index):
 
 def validate_finger_name(finger_name):
     """Validate if finger name is a recognized standard name
-    
+
     Args:
         finger_name (str): Finger name to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
@@ -363,3 +470,136 @@ def validate_finger_name(finger_name):
         'Right Thumb', 'Right Index', 'Right Middle', 'Right Ring', 'Right Little'
     }
     return finger_name in valid_names
+
+def log_time_sync_operation(message, level="INFO"):
+    """Log time sync operations to dedicated log file
+
+    Args:
+        message (str): Log message
+        level (str): Log level (INFO, WARNING, ERROR)
+    """
+    import os
+
+    # Ensure logs directory exists
+    log_dir = os.path.dirname(TIME_SYNC_LOG_FILE)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = f"[{timestamp}] [{level}] {message}\n"
+
+    try:
+        with open(TIME_SYNC_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"Failed to write time sync log: {e}")
+
+def should_run_time_sync():
+    """Check if time sync should run based on end-of-day schedule
+
+    Returns:
+        bool: True if time sync should run now
+    """
+    if not ENABLE_TIME_SYNC or not TIME_SYNC_WITH_END_OF_DAY:
+        return False
+
+    # Use same logic as end-of-day re-sync
+    return should_run_end_of_day_resync()
+
+def sync_time_to_devices(devices_list=None, force=False):
+    """Synchronize time from server to biometric devices
+
+    Args:
+        devices_list (list): List of devices to sync time to. If None, uses all devices.
+        force (bool): Force sync even if time difference is small
+
+    Returns:
+        dict: Summary of sync results
+    """
+    from zk import ZK
+    import datetime
+
+    if not ENABLE_TIME_SYNC and not force:
+        log_time_sync_operation("Time sync disabled in configuration", "INFO")
+        return {"success": False, "message": "Time sync disabled"}
+
+    if devices_list is None:
+        devices_list = devices
+
+    server_time = datetime.datetime.now()
+    results = {
+        "total_devices": len(devices_list),
+        "success_count": 0,
+        "failed_count": 0,
+        "skipped_count": 0,
+        "details": []
+    }
+
+    log_time_sync_operation(f"Starting time sync to {len(devices_list)} devices")
+    log_time_sync_operation(f"Server time: {server_time}")
+
+    for device in devices_list:
+        device_id = device['device_id']
+        device_ip = device['ip']
+        device_result = {
+            "device_id": device_id,
+            "device_ip": device_ip,
+            "success": False,
+            "message": "",
+            "time_diff_seconds": None,
+            "old_time": None,
+            "new_time": None
+        }
+
+        try:
+            log_time_sync_operation(f"Connecting to device {device_id} ({device_ip})")
+
+            # Connect to device
+            zk = ZK(device_ip, port=4370, timeout=TIME_SYNC_TIMEOUT_SECONDS, force_udp=True)
+            conn = zk.connect()
+
+            if not conn:
+                device_result["message"] = "Failed to connect to device"
+                results["failed_count"] += 1
+                log_time_sync_operation(f"Failed to connect to {device_id}", "ERROR")
+                results["details"].append(device_result)
+                continue
+
+            # Get current device time
+            device_time = conn.get_time()
+            device_result["old_time"] = device_time
+
+            # Calculate time difference
+            time_diff = abs((server_time - device_time).total_seconds())
+            device_result["time_diff_seconds"] = time_diff
+
+            log_time_sync_operation(f"Device {device_id} time: {device_time}, difference: {time_diff:.1f}s")
+
+            # Check if sync is needed
+            if not force and time_diff < TIME_SYNC_MAX_DIFF_SECONDS:
+                device_result["message"] = f"Time difference ({time_diff:.1f}s) within tolerance"
+                device_result["success"] = True
+                results["skipped_count"] += 1
+                log_time_sync_operation(f"Skipping {device_id} - time difference within tolerance")
+            else:
+                # Sync time to device
+                conn.set_time(server_time)
+                device_result["new_time"] = server_time
+                device_result["success"] = True
+                device_result["message"] = f"Time synced successfully (diff: {time_diff:.1f}s)"
+                results["success_count"] += 1
+                log_time_sync_operation(f"Time synced to {device_id} successfully")
+
+            conn.disconnect()
+
+        except Exception as e:
+            device_result["message"] = f"Error: {str(e)}"
+            results["failed_count"] += 1
+            log_time_sync_operation(f"Error syncing time to {device_id}: {e}", "ERROR")
+
+        results["details"].append(device_result)
+
+    # Log summary
+    log_time_sync_operation(f"Time sync completed - Success: {results['success_count']}, Failed: {results['failed_count']}, Skipped: {results['skipped_count']}")
+
+    return results
