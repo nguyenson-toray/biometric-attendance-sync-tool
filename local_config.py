@@ -59,6 +59,10 @@ ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
 SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
 SYNC_CHANGED_HOURS_BACK = 24
+
+# MongoDB sync feature toggle
+ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
+sync_log_from_mongodb_to_erpnext_date_range = ['20250917', '20250918']  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current date
 # End-of-day re-sync configuration
 ENABLE_END_OF_DAY_RESYNC = True
 END_OF_DAY_RESYNC_HOUR = 21

@@ -59,6 +59,18 @@ class ERPNextSyncService:
             print(f"   - Will re-sync ALL logs for current day")
         else:
             print(f"🌙 END-OF-DAY RE-SYNC: DISABLED")
+
+        # Display MongoDB sync configuration
+        if getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
+            print(f"🗃️ MONGODB SYNC: ENABLED")
+            date_range = getattr(local_config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
+            if date_range and len(date_range) == 2:
+                print(f"   - Date range: {date_range[0]} to {date_range[1]}")
+            else:
+                print(f"   - Mode: Current date only")
+            print(f"   - Runs during end-of-day cycle")
+        else:
+            print(f"🗃️ MONGODB SYNC: DISABLED")
             
         print("=" * 80)
     
@@ -196,6 +208,41 @@ class ERPNextSyncService:
 
         except Exception as e:
             print(f"✗ Time sync thất bại: {e}")
+            print(f"  Chi tiết lỗi: {traceback.format_exc()}")
+            return False
+
+    def execute_mongodb_sync(self):
+        """Execute MongoDB to ERPNext sync"""
+        try:
+            print(f"\n[{datetime.datetime.now()}] Bắt đầu sync log từ MongoDB đến ERPNext...")
+
+            # Check if MongoDB sync is enabled
+            if not getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
+                print("  MongoDB sync disabled in configuration")
+                return True
+
+            # Import the MongoDB sync module
+            import sync_log_from_mongodb_to_erpnext
+
+            # Execute MongoDB sync
+            result = sync_log_from_mongodb_to_erpnext.run_mongodb_sync()
+
+            # Display results
+            if result['success']:
+                details = result['details']
+                print(f"📊 MONGODB SYNC SUMMARY:")
+                print(f"   Total records found: {details['total_records']}")
+                print(f"   Successfully processed: {details['processed']}")
+                print(f"   Skipped (duplicates/missing employees): {details['skipped']}")
+                print(f"   Failed: {details['errors']}")
+                print("✓ Sync log từ MongoDB đến ERPNext hoàn thành")
+                return True
+            else:
+                print(f"✗ Sync log từ MongoDB đến ERPNext thất bại: {result['message']}")
+                return False
+
+        except Exception as e:
+            print(f"✗ MongoDB sync thất bại: {e}")
             print(f"  Chi tiết lỗi: {traceback.format_exc()}")
             return False
     
@@ -390,6 +437,31 @@ class ERPNextSyncService:
                     local_config.log_resync_operation("✅ Time sync COMPLETED successfully during end-of-day cycle")
             else:
                 local_config.log_operation_decision("END-OF-DAY Time Sync", False, "Time sync disabled or not configured for end-of-day")
+
+            # =====================================================================
+            # OPTIONAL: MongoDB Sync (if enabled)
+            # =====================================================================
+
+            if getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
+                print(f"\n[🌙 END-OF-DAY] MongoDB Sync từ MongoDB đến ERPNext")
+                print("   🗃️ Syncing attendance logs from MongoDB to ERPNext")
+
+                local_config.log_operation_decision("END-OF-DAY MongoDB Sync", True, "End-of-day MongoDB synchronization")
+                local_config.log_resync_operation("🗃️ STARTING MONGODB SYNC FROM MONGODB TO ERPNEXT")
+
+                date_range = getattr(local_config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
+                if date_range:
+                    local_config.log_resync_operation(f"   📋 Date range: {date_range[0]} to {date_range[1]}")
+                else:
+                    local_config.log_resync_operation("   📋 Will sync current date only")
+
+                if not self.execute_mongodb_sync():
+                    print("⚠ MongoDB sync failed during end-of-day cycle")
+                    local_config.log_resync_operation("❌ MongoDB sync FAILED during end-of-day cycle", "ERROR")
+                else:
+                    local_config.log_resync_operation("✅ MongoDB sync COMPLETED successfully during end-of-day cycle")
+            else:
+                local_config.log_operation_decision("END-OF-DAY MongoDB Sync", False, "MongoDB sync disabled in configuration")
             
             # =====================================================================
             # END-OF-DAY CYCLE SUMMARY
@@ -581,6 +653,18 @@ def main():
             print(f"    Connection timeout: {local_config.TIME_SYNC_TIMEOUT_SECONDS}s")
         else:
             print(f"  🕒 Time sync: DISABLED")
+
+        # Display MongoDB sync status
+        if getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
+            print(f"  🗃️ MongoDB sync: ENABLED")
+            date_range = getattr(local_config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
+            if date_range and len(date_range) == 2:
+                print(f"    Date range: {date_range[0]} to {date_range[1]}")
+            else:
+                print(f"    Mode: Current date only")
+            print(f"    Runs during: End-of-day cycle")
+        else:
+            print(f"  🗃️ MongoDB sync: DISABLED")
             
         local_config.log_bypass_status()
         return
