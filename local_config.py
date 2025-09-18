@@ -65,7 +65,7 @@ ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
 sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current date
 # End-of-day re-sync configuration
 ENABLE_END_OF_DAY_RESYNC = True
-END_OF_DAY_RESYNC_HOUR = 21
+END_OF_DAY_RESYNC_HOUR = 22
 END_OF_DAY_RESYNC_MINUTE = 30
 END_OF_DAY_RESYNC_WINDOW_MINUTES = 10  # ±5 phút từ thời điểm mục tiêu
 END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Dedicated log file for re-sync operations
