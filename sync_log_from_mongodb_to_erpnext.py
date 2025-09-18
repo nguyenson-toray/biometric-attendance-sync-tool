@@ -67,7 +67,8 @@ def send_to_erpnext(employee_field_value, timestamp, device_id=None):
     data = {
         'employee_field_value': employee_field_value,
         'timestamp': timestamp.__str__(),
-        'device_id': device_id,
+        'device_id': None,
+        'custom_reason_for_manual_check_in': 'Forget Check In/Out',
         'log_type': None,  # Let ERPNext auto-determine
         'latitude': None,
         'longitude': None

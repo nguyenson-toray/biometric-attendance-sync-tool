@@ -62,7 +62,7 @@ SYNC_CHANGED_HOURS_BACK = 24
 
 # MongoDB sync feature toggle
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
-sync_log_from_mongodb_to_erpnext_date_range = ['20250917', '20250918']  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current date
+sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current date
 # End-of-day re-sync configuration
 ENABLE_END_OF_DAY_RESYNC = True
 END_OF_DAY_RESYNC_HOUR = 21

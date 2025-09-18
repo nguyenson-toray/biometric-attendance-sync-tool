@@ -9,3 +9,4 @@ pyzk>=0.9
 # Required: Vietnamese name normalization for device compatibility
 # Converts 'Nguyễn Văn A' → 'Nguyen Van A' for biometric devices
 unidecode>=1.2.0
+pymongo
