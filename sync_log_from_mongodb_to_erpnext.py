@@ -6,17 +6,31 @@ Sync attendance data from MongoDB to ERPNext Employee Checkin
 import requests
 import json
 from pymongo import MongoClient
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add the path to access local_config
 sys.path.append('/home/sonnt/frappe-bench/apps/biometric-attendance-sync-tool')
 import local_config as config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - only log errors to file for better performance
+logging.basicConfig(
+    level=logging.ERROR,  # Changed from INFO to ERROR for performance
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool/sync_log_from_mongodb_to_erpnext.txt', mode='a')  # File output
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Separate logger for console with INFO level
+console_logger = logging.getLogger(__name__ + '.console')
+console_logger.setLevel(logging.INFO)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+console_logger.addHandler(console_handler)
 
 # MongoDB connection settings
 MONGODB_HOST = "10.0.1.4"
@@ -32,6 +46,36 @@ ERPNEXT_VERSION = getattr(config, 'ERPNEXT_VERSION', 14)
 # Date sync configuration - now loaded from local_config
 # Use config.sync_log_from_mongodb_to_erpnext_date_range
 
+# Performance settings
+MAX_WORKERS = 200  # Maximum parallel workers (increased from 100)
+BATCH_SIZE = 1000  # Batch size for MongoDB cursor
+REQUEST_TIMEOUT = 10  # Request timeout in seconds
+
+# Global session for connection pooling
+session = None
+
+# Pre-build ERPNext API URL (computed once)
+ERPNEXT_API_URL = None
+
+def get_session():
+    """Get or create a global requests session with large connection pool"""
+    global session
+    if session is None:
+        session = requests.Session()
+        # Increase connection pool to match MAX_WORKERS
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=MAX_WORKERS,
+            pool_maxsize=MAX_WORKERS,
+            max_retries=2
+        )
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        session.headers.update({
+            'Authorization': "token " + config.ERPNEXT_API_KEY + ":" + config.ERPNEXT_API_SECRET,
+            'Accept': 'application/json'
+        })
+    return session
+
 def connect_to_mongodb():
     """Connect to MongoDB server"""
     try:
@@ -45,61 +89,80 @@ def connect_to_mongodb():
 
         # Test connection
         client.admin.command('ping')
-        logger.info(f"Successfully connected to MongoDB at {MONGODB_HOST}")
+        console_logger.info(f"Successfully connected to MongoDB at {MONGODB_HOST}")
 
         return client
     except Exception as e:
+        console_logger.error(f"Failed to connect to MongoDB: {e}")
         logger.error(f"Failed to connect to MongoDB: {e}")
         raise
 
-def send_to_erpnext(employee_field_value, timestamp, device_id=None):
-    """
-    Send attendance data to ERPNext using the same API as the reference script
-    """
-    endpoint_app = "hrms" if ERPNEXT_VERSION > 13 else "erpnext"
-    url = f"{config.ERPNEXT_URL}/api/method/{endpoint_app}.hr.doctype.employee_checkin.employee_checkin.add_log_based_on_employee_field"
+def map_machine_no_to_device_id(machine_no):
+    """Map machineNo to device_id"""
+    return f"Machine {machine_no}" if 1 <= machine_no <= 7 else None
 
-    headers = {
-        'Authorization': "token " + config.ERPNEXT_API_KEY + ":" + config.ERPNEXT_API_SECRET,
-        'Accept': 'application/json'
-    }
+def get_erpnext_api_url():
+    """Get or build ERPNext API URL once"""
+    global ERPNEXT_API_URL
+    if ERPNEXT_API_URL is None:
+        endpoint_app = "hrms" if ERPNEXT_VERSION > 13 else "erpnext"
+        ERPNEXT_API_URL = f"{config.ERPNEXT_URL}/api/method/{endpoint_app}.hr.doctype.employee_checkin.employee_checkin.add_log_based_on_employee_field"
+    return ERPNEXT_API_URL
+
+def send_to_erpnext(employee_field_value, timestamp, device_id=None):
+    """Send attendance to ERPNext - direct insert, no validation"""
+    url = get_erpnext_api_url()
 
     data = {
         'employee_field_value': employee_field_value,
         'timestamp': timestamp.__str__(),
-        'device_id': None,
-        'custom_reason_for_manual_check_in': 'Forget Check In/Out',
-        'log_type': None,  # Let ERPNext auto-determine
-        'latitude': None,
-        'longitude': None
+        'device_id': device_id
     }
 
     try:
-        response = requests.request("POST", url, headers=headers, json=data)
-        if response.status_code == 200:
-            result = json.loads(response._content)['message']['name']
-            return 200, result
-        else:
-            error_str = _safe_get_error_str(response)
-            return response.status_code, error_str
+        response = get_session().post(url, json=data, timeout=REQUEST_TIMEOUT)
+        return response.status_code, json.loads(response._content)['message']['name'] if response.status_code == 200 else _safe_get_error_str(response)
     except Exception as e:
-        logger.error(f"Exception during ERPNext API call: {e}")
         return 500, str(e)
 
 def _safe_get_error_str(res):
-    """Extract error message from response"""
+    """Extract error from response"""
     try:
         error_json = json.loads(res._content)
-        if 'exc' in error_json:
-            error_str = json.loads(error_json['exc'])[0]
-        else:
-            error_str = json.dumps(error_json)
+        return json.loads(error_json['exc'])[0] if 'exc' in error_json else json.dumps(error_json)
     except:
-        error_str = str(res.__dict__)
-    return error_str
+        return str(res.__dict__)
+
+def process_record(record, user_id_ignored_set):
+    """Process single record - optimized for maximum speed"""
+    att_finger_id = record.get('attFingerId')
+    timestamp = record.get('timestamp')
+
+    # Fast validation with set lookup O(1)
+    if not att_finger_id or not timestamp or str(att_finger_id) in user_id_ignored_set:
+        return ('skipped', None)
+
+    device_id = map_machine_no_to_device_id(record.get('machineNo', 0))
+    status_code, response = send_to_erpnext(str(att_finger_id), timestamp, device_id)
+
+    if status_code == 200:
+        return ('processed', None)
+    elif "already has a log" in str(response).lower():
+        return ('skipped', None)
+    else:
+        # Return error with details
+        error_detail = {
+            'attFingerId': att_finger_id,
+            'timestamp': timestamp,
+            'machineNo': record.get('machineNo'),
+            'device_id': device_id,
+            'status_code': status_code,
+            'error': str(response)
+        }
+        return ('error', error_detail)
 
 def sync_attendance_data():
-    """Main function to sync attendance data"""
+    """Main function to sync attendance data with maximum parallel processing"""
     try:
         # Connect to MongoDB
         client = connect_to_mongodb()
@@ -108,10 +171,21 @@ def sync_attendance_data():
 
         # Get date range from config
         date_range = getattr(config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
+        user_id_ignored = getattr(config, 'user_id_inorged', [])
+        sync_only_machines_0 = getattr(config, 'sync_only_machines_0', True)
 
-        # Determine date range based on configuration
+        # Convert user_id_ignored to set for O(1) lookup performance
+        user_id_ignored_set = set(str(uid) for uid in user_id_ignored)
+
+        # Create indexes (silently skip if exists)
+        try:
+            collection.create_index([("timestamp", -1), ("machineNo", 1)])
+            collection.create_index([("attFingerId", 1)])
+        except:
+            pass
+
+        # Build query
         if date_range and isinstance(date_range, list) and len(date_range) == 2:
-            # Use specified date range
             start_date_str, end_date_str = date_range
             start_date = datetime.strptime(start_date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
             end_date = datetime.strptime(end_date_str, "%Y%m%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
@@ -120,88 +194,93 @@ def sync_attendance_data():
                 "timestamp": {
                     "$gte": start_date,
                     "$lte": end_date
-                },
-                "machineNo": 0
+                }
             }
 
-            logger.info(f"Querying MongoDB for records from {start_date_str} to {end_date_str}")
+            console_logger.info(f"Syncing date range: {start_date_str} to {end_date_str}")
             print(f"📅 Syncing date range: {start_date_str} to {end_date_str}")
         else:
-            # Use current date only
+            # Use current date and previous date (2 days total)
             current_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            previous_date = current_date - timedelta(days=1)
             end_date = current_date.replace(hour=23, minute=59, second=59)
 
             query = {
                 "timestamp": {
-                    "$gte": current_date,
+                    "$gte": previous_date,
                     "$lte": end_date
-                },
-                "machineNo": 0
+                }
             }
 
-            current_date_str = current_date.strftime("%Y%m%d")
-            logger.info(f"Querying MongoDB for records from {current_date_str} (current date)")
-            print(f"📅 Syncing current date: {current_date_str}")
+            print(f"📅 Syncing: yesterday + today")
 
-        records = list(collection.find(query))
-        logger.info(f"Found {len(records)} records to process")
+        # Add machineNo filter if configured
+        if sync_only_machines_0:
+            query["machineNo"] = 0
+            print(f"🔍 Filter: Only machineNo = 0")
 
-        processed = 0
-        skipped = 0
-        errors = 0
+        if user_id_ignored:
+            print(f"🚫 Ignored user IDs: {user_id_ignored}")
 
-        # Process records using ERPNext API
-        for record in records:
-            try:
-                att_finger_id = record.get('attFingerId')
-                timestamp = record.get('timestamp')
-                machine_no = record.get('machineNo', 0)
+        # Fetch all records with projection and batch processing
+        projection = {"attFingerId": 1, "timestamp": 1, "machineNo": 1}
+        cursor = collection.find(query, projection).batch_size(BATCH_SIZE)
 
-                if not att_finger_id or not timestamp:
-                    logger.warning(f"Skipping record with missing data: {record}")
-                    skipped += 1
-                    continue
+        # Convert cursor to list for parallel processing
+        records = list(cursor)
+        console_logger.info(f"Found {len(records)} records to process")
+        print(f"📊 Total records: {len(records)}")
 
-                # Send to ERPNext using attendance_device_id as employee_field_value
-                status_code, message = send_to_erpnext(
-                    employee_field_value=str(att_finger_id),
-                    timestamp=timestamp,
-                    device_id=str(machine_no)
-                )
+        # Process all records in parallel with max workers
+        total_processed = 0
+        total_skipped = 0
+        total_errors = 0
 
-                if status_code == 200:
-                    logger.info(f"Success: Created Employee Checkin {message} for attFingerId {att_finger_id}")
-                    processed += 1
-                else:
-                    logger.error(f"Failed: attFingerId {att_finger_id}, Status {status_code}, Error: {message}")
+        print(f"🚀 Processing with {MAX_WORKERS} parallel workers...")
 
-                    # Check for specific error types
-                    if "No Employee found for the given employee field value" in message:
-                        logger.warning(f"Employee not found for attFingerId: {att_finger_id}")
-                        skipped += 1
-                    elif "This employee already has a log with the same timestamp" in message:
-                        logger.info(f"Duplicate entry skipped for attFingerId {att_finger_id} at {timestamp}")
-                        skipped += 1
-                    else:
-                        errors += 1
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = [executor.submit(process_record, record, user_id_ignored_set) for record in records]
 
-            except Exception as e:
-                logger.error(f"Error processing record {record}: {e}")
-                errors += 1
+            for future in as_completed(futures):
+                status, error_detail = future.result()
+
+                if status == 'processed':
+                    total_processed += 1
+                elif status == 'skipped':
+                    total_skipped += 1
+                else:  # error
+                    total_errors += 1
+                    # Log error details to file
+                    if error_detail:
+                        logger.error(
+                            f"ERROR - attFingerId: {error_detail['attFingerId']}, "
+                            f"timestamp: {error_detail['timestamp']}, "
+                            f"machineNo: {error_detail['machineNo']}, "
+                            f"device_id: {error_detail['device_id']}, "
+                            f"status_code: {error_detail['status_code']}, "
+                            f"error: {error_detail['error']}"
+                        )
 
         # Close MongoDB connection
         client.close()
 
-        logger.info(f"Sync completed: {processed} processed, {skipped} skipped, {errors} errors")
+        # Close session when done
+        global session
+        if session:
+            session.close()
+            session = None
+
+        console_logger.info(f"Sync completed: {total_processed} processed, {total_skipped} skipped, {total_errors} errors")
 
         return {
-            "processed": processed,
-            "skipped": skipped,
-            "errors": errors,
-            "total_records": len(records)
+            "processed": total_processed,
+            "skipped": total_skipped,
+            "errors": total_errors,
+            "total_records": total_processed + total_skipped + total_errors
         }
 
     except Exception as e:
+        console_logger.error(f"Sync failed: {e}")
         logger.error(f"Sync failed: {e}")
         raise
 

@@ -52,10 +52,10 @@ class ERPNextSyncService:
             print("📅 NORMAL MODE: Processing only new attendance logs")
         
         # Display end-of-day re-sync configuration
-        if local_config.ENABLE_END_OF_DAY_RESYNC:
+        if local_config.ENABLE_RESYNC_ON_DAY:
             print(f"🌙 END-OF-DAY RE-SYNC: ENABLED")
-            print(f"   - Schedule: {local_config.END_OF_DAY_RESYNC_HOUR:02d}:{local_config.END_OF_DAY_RESYNC_MINUTE:02d} daily")
-            print(f"   - Window: ±{local_config.END_OF_DAY_RESYNC_WINDOW_MINUTES//2} minutes")
+            print(f"   - Schedule: {', '.join(local_config.TIME_RESYNC_ON_DAY)} daily")
+            print(f"   - Window: ±{local_config.RESYNC_WINDOW_MINUTES_ON_DAY//2} minutes")
             print(f"   - Will re-sync ALL logs for current day")
         else:
             print(f"🌙 END-OF-DAY RE-SYNC: DISABLED")
@@ -167,7 +167,7 @@ class ERPNextSyncService:
             return False
 
     def execute_time_sync(self):
-        """Execute time synchronization from server to devices"""
+        """Execute time synchronization from server to devices""" 
         try:
             print(f"\n[{datetime.datetime.now()}] Bắt đầu đồng bộ giờ từ server đến devices...")
 
@@ -422,7 +422,7 @@ class ERPNextSyncService:
             # OPTIONAL: Time Sync (if enabled)
             # =====================================================================
 
-            if local_config.ENABLE_TIME_SYNC and local_config.TIME_SYNC_WITH_END_OF_DAY:
+            if local_config.ENABLE_TIME_SYNC and local_config.TIME_SYNC_AND_RESTART_AT_NIGHT:
                 print(f"\n[🌙 END-OF-DAY] Time Sync từ Server đến Devices")
                 print("   🕒 Synchronizing server time to all biometric devices")
 
@@ -638,9 +638,9 @@ def main():
             print(f"  📅 Re-sync mode: DISABLED (normal processing)")
         
         # Display end-of-day re-sync status
-        if local_config.ENABLE_END_OF_DAY_RESYNC:
+        if local_config.ENABLE_RESYNC_ON_DAY:
             print(f"  🌙 End-of-day re-sync: ENABLED")
-            print(f"    Schedule: {local_config.END_OF_DAY_RESYNC_HOUR:02d}:{local_config.END_OF_DAY_RESYNC_MINUTE:02d} daily (±{local_config.END_OF_DAY_RESYNC_WINDOW_MINUTES//2}min)")
+            print(f"    Schedule: {', '.join(local_config.TIME_RESYNC_ON_DAY)} daily (±{local_config.RESYNC_WINDOW_MINUTES_ON_DAY//2}min)")
             print(f"    Next check: Every {local_config.PULL_FREQUENCY} minutes")
         else:
             print(f"  🌙 End-of-day re-sync: DISABLED")
@@ -648,7 +648,7 @@ def main():
         # Display time sync status
         if local_config.ENABLE_TIME_SYNC:
             print(f"  🕒 Time sync: ENABLED")
-            print(f"    With end-of-day: {'YES' if local_config.TIME_SYNC_WITH_END_OF_DAY else 'NO'}")
+            print(f"    With night restart: {'YES' if local_config.TIME_SYNC_AND_RESTART_AT_NIGHT else 'NO'}")
             print(f"    Sync threshold: {local_config.TIME_SYNC_MAX_DIFF_SECONDS}s")
             print(f"    Connection timeout: {local_config.TIME_SYNC_TIMEOUT_SECONDS}s")
         else:

@@ -24,7 +24,7 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 # operational configs
 PULL_FREQUENCY = 5 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
-IMPORT_START_DATE = '20250826' # format: '20190501' , Kỳ lương tháng 9/25
+IMPORT_START_DATE = '20251009' # format: '20190501'  
 
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
@@ -35,22 +35,22 @@ IMPORT_START_DATE = '20250826' # format: '20190501' , Kỳ lương tháng 9/25
     #- latitude - float, latitude of the location of the device
     #- longitude - float, longitude of the location of the device
 devices = [
-    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    {'device_id':'Machine_7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    # {'device_id':'Machine_8','ip':'10.0.1.48', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
-    # {'device_id':'Machine_10','ip':'10.0.1.50', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
+    {'device_id':'Machine 1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 2','ip':'10.0.1.42', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 3','ip':'10.0.1.43', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 4','ip':'10.0.1.44', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 5','ip':'10.0.1.45', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 6','ip':'10.0.1.46', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    {'device_id':'Machine 7','ip':'10.0.1.47', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine 8','ip':'10.0.1.48', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000},
+    # {'device_id':'Machine 10','ip':'10.0.1.50', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 ]
 devices_master =    {'device_id':'Machine_1','ip':'10.0.1.41', 'punch_direction': None, 'clear_from_device_on_fetch': False, 'latitude':0.0000,'longitude':0.0000}
 sync_from_master_device_to_erpnext_filters_id=[]
-# sync_from_master_device_to_erpnext_filters_id=['1687','1688','1689','1690','1691','1692','1693','1694','1695']
+# sync_from_master_device_to_erpnext_filters_id=['1735','1736','1737','1738','1739']
 # sync_from_master_device_to_erpnext_filters_id=[] : sync all user IDs from master device to ERPNext
 # user_id_inorged - list of user IDs to be ignored / STRING : Tạp vụ
-user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005']
+user_id_inorged=['55','58','161','623','916','920','3000','3001','3002','6004','6005','6006','6007','6008']
 re_sync_data_date_range = [] #=['from date','to date'] ['20250915','20250917'] ,  'YYYYMMDD'  or [] for no filter
 # Add 'Employee Checkin'  between this date range on ERPNEXT, no error for dupplicate
 #  set to [] to disable this feature after use
@@ -62,19 +62,19 @@ SYNC_CHANGED_HOURS_BACK = 24
 
 # MongoDB sync feature toggle
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
-sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current date
+sync_only_machines_0 = False  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
+sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current+previous date
 # End-of-day re-sync configuration
-ENABLE_END_OF_DAY_RESYNC = True
-END_OF_DAY_RESYNC_HOUR = 22
-END_OF_DAY_RESYNC_MINUTE = 30
-END_OF_DAY_RESYNC_WINDOW_MINUTES = 10  # ±5 phút từ thời điểm mục tiêu
+ENABLE_RESYNC_ON_DAY = True
+TIME_RESYNC_ON_DAY = ["08:15:00","22:30:00"]  # các mốc thời điểm re-sync, bỏ qua sync nếu rỗng []
+RESYNC_WINDOW_MINUTES_ON_DAY = 10  # ±5 phút từ thời điểm mục tiêu
 END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Dedicated log file for re-sync operations
 
 # Time synchronization configuration
-ENABLE_TIME_SYNC = True  # Enable time sync to devices
-TIME_SYNC_WITH_END_OF_DAY = True  # Sync time during end-of-day process
-TIME_SYNC_MAX_DIFF_SECONDS = 10  # Only sync if time difference > 60 seconds
-TIME_SYNC_TIMEOUT_SECONDS = 10  # Connection timeout for time sync
+ENABLE_TIME_SYNC = True  # Enable time sync to devices,  # Only run on Sunday if enabled
+TIME_SYNC_AND_RESTART_AT_NIGHT = True  # Sync time and restart device during night process
+TIME_SYNC_MAX_DIFF_SECONDS = 3  # Only sync if time difference > 60 seconds
+TIME_SYNC_TIMEOUT_SECONDS = 3  # Connection timeout for time sync
 TIME_SYNC_LOG_FILE = 'logs/time_sync.log'  # Dedicated log file for time sync operations
 # FingerID	Code	Name
 # 55	NK-01	NK-01-HT Hien
@@ -268,32 +268,38 @@ def log_operation_decision(operation, will_execute, reason=""):
         print(f"    Lý do: {reason}")
 
 def should_run_end_of_day_resync():
-    """Check if should run end-of-day re-sync based on current time"""
-    if not ENABLE_END_OF_DAY_RESYNC:
+    """Check if should run re-sync based on configured time points"""
+    if not ENABLE_RESYNC_ON_DAY or not TIME_RESYNC_ON_DAY:
         return False
-    
+
     current_time = datetime.datetime.now()
-    
-    # Check if we're in the target time window
-    target_hour = END_OF_DAY_RESYNC_HOUR
-    target_minute = END_OF_DAY_RESYNC_MINUTE
-    window_minutes = END_OF_DAY_RESYNC_WINDOW_MINUTES // 2  # ±5 minutes
-    
-    # Create target time for today
-    target_time = current_time.replace(
-        hour=target_hour, 
-        minute=target_minute, 
-        second=0, 
-        microsecond=0
-    )
-    
-    # Calculate time difference in minutes
-    time_diff_minutes = abs((current_time - target_time).total_seconds()) / 60
-    
-    # Check if we're within the window
-    if time_diff_minutes <= window_minutes:
-        return True
-    
+    current_time_str = current_time.strftime("%H:%M:%S")
+    window_minutes = RESYNC_WINDOW_MINUTES_ON_DAY // 2  # ±5 minutes
+
+    # Check each configured time point
+    for target_time_str in TIME_RESYNC_ON_DAY:
+        try:
+            # Parse target time
+            target_hour, target_minute, target_second = map(int, target_time_str.split(':'))
+
+            # Create target time for today
+            target_time = current_time.replace(
+                hour=target_hour,
+                minute=target_minute,
+                second=target_second,
+                microsecond=0
+            )
+
+            # Calculate time difference in minutes
+            time_diff_minutes = abs((current_time - target_time).total_seconds()) / 60
+
+            # Check if we're within the window
+            if time_diff_minutes <= window_minutes:
+                return True
+        except ValueError:
+            print(f"Warning: Invalid time format in TIME_RESYNC_ON_DAY: {target_time_str}")
+            continue
+
     return False
 
 def get_end_of_day_resync_date_range():
@@ -499,15 +505,16 @@ def log_time_sync_operation(message, level="INFO"):
         print(f"Failed to write time sync log: {e}")
 
 def should_run_time_sync():
-    """Check if time sync should run based on end-of-day schedule
+    """Check if time sync should run based on night schedule
 
     Returns:
         bool: True if time sync should run now
     """
-    if not ENABLE_TIME_SYNC or not TIME_SYNC_WITH_END_OF_DAY:
+    if not ENABLE_TIME_SYNC or not TIME_SYNC_AND_RESTART_AT_NIGHT or datetime.date.today().weekday() <= 5:
+        # Only run on Sunday if enabled
         return False
 
-    # Use same logic as end-of-day re-sync
+    # Use same logic as re-sync on day
     return should_run_end_of_day_resync()
 
 def sync_time_to_devices(devices_list=None, force=False):
@@ -593,6 +600,15 @@ def sync_time_to_devices(devices_list=None, force=False):
                 device_result["message"] = f"Time synced successfully (diff: {time_diff:.1f}s)"
                 results["success_count"] += 1
                 log_time_sync_operation(f"Time synced to {device_id} successfully")
+
+                # Restart device after time sync
+                try:
+                    conn.restart()
+                    log_time_sync_operation(f"Device {device_id} restarted successfully after time sync")
+                    device_result["message"] += " and device restarted"
+                except Exception as restart_error:
+                    log_time_sync_operation(f"Warning: Failed to restart device {device_id}: {restart_error}", "WARNING")
+                    device_result["message"] += " (restart failed)"
 
             conn.disconnect()
 

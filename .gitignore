@@ -5,10 +5,11 @@ logs/
 __pycache__/
 *.py[cod]
 *$py.class
-
+*.pid
+erpnext_sync_all.pid
 # C extensions
 *.so
-
+sync_log_from_mongodb_to_erpnext.txt
 # Distribution / packaging
 .Python
 build/
