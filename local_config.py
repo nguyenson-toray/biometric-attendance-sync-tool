@@ -592,6 +592,12 @@ def sync_time_to_devices(devices_list=None, force=False):
                 device_result["success"] = True
                 results["skipped_count"] += 1
                 log_time_sync_operation(f"Skipping {device_id} - time difference within tolerance")
+
+                # Disconnect before continuing to next device
+                try:
+                    conn.disconnect()
+                except Exception as disc_error:
+                    log_time_sync_operation(f"Warning: Failed to disconnect from {device_id}: {disc_error}", "WARNING")
             else:
                 # Sync time to device
                 conn.set_time(server_time)
@@ -601,16 +607,28 @@ def sync_time_to_devices(devices_list=None, force=False):
                 results["success_count"] += 1
                 log_time_sync_operation(f"Time synced to {device_id} successfully")
 
-                # Restart device after time sync
+                # Disconnect BEFORE restart (device will be disconnected after restart anyway)
                 try:
-                    conn.restart()
-                    log_time_sync_operation(f"Device {device_id} restarted successfully after time sync")
-                    device_result["message"] += " and device restarted"
+                    conn.disconnect()
+                    log_time_sync_operation(f"Disconnected from {device_id} before restart")
+                except Exception as disc_error:
+                    log_time_sync_operation(f"Warning: Failed to disconnect from {device_id}: {disc_error}", "WARNING")
+
+                # Restart device after time sync and disconnect
+                try:
+                    # Reconnect briefly to send restart command
+                    conn = zk.connect()
+                    if conn:
+                        conn.restart()
+                        log_time_sync_operation(f"Device {device_id} restart command sent successfully")
+                        device_result["message"] += " and device restarted"
+                        # No need to disconnect again as device will restart
+                    else:
+                        log_time_sync_operation(f"Warning: Could not reconnect to restart {device_id}", "WARNING")
+                        device_result["message"] += " (restart failed - reconnection failed)"
                 except Exception as restart_error:
                     log_time_sync_operation(f"Warning: Failed to restart device {device_id}: {restart_error}", "WARNING")
                     device_result["message"] += " (restart failed)"
-
-            conn.disconnect()
 
         except Exception as e:
             device_result["message"] = f"Error: {str(e)}"
