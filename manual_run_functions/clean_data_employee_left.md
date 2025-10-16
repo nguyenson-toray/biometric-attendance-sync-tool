@@ -2,48 +2,70 @@
 
 ## 🎯 Chức Năng
 
-Tool dọn dẹp toàn diện cho nhân viên có trạng thái "Left" (Nghỉ việc):
+Tool dọn dẹp toàn diện cho nhân viên có trạng thái "Left" (Nghỉ việc) với 2 chế độ xử lý:
 
-1. **Xác thực ngày tháng**: Chỉ xử lý nhân viên có `current_date > relieving_date`  
-2. **Xóa dữ liệu ERPNext**: Xóa tất cả fingerprint records trong bảng `custom_fingerprints`
-3. **Xóa template thiết bị**: Clear tất cả fingerprint templates trên các máy chấm công
+### Chế độ 1: Xóa Template (Clear Templates)
+- **Điều kiện**: Nhân viên nghỉ việc >= `CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS` ngày (mặc định: 60 ngày)
+- **Hành động**:
+  - Xóa hoàn toàn user khỏi thiết bị
+  - Tạo lại user với cùng thông tin nhưng **KHÔNG có fingerprint templates**
+  - Giữ nguyên `user_id` để bảo toàn lịch sử chấm công
+- **Lợi ích**: Tiết kiệm bộ nhớ thiết bị, vẫn theo dõi được attendance history
+
+### Chế độ 2: Xóa Vĩnh Viễn (Permanently Delete)
+- **Điều kiện**: Nhân viên nghỉ việc > `ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS` ngày (mặc định: 120 ngày)
+- **Hành động**: Xóa hoàn toàn user khỏi thiết bị (bao gồm cả `user_id`)
+- **Ưu tiên**: Được kiểm tra **TRƯỚC** chế độ xóa template
+
+### Xử lý ERPNext (Tùy chọn)
+- **Điều kiện**: `ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = True`
+- **Hành động**: Xóa tất cả fingerprint records trong ERPNext
+- **Khuyến nghị**: Giữ `False` để bảo toàn dữ liệu lịch sử
 
 ## Thuật toán hoạt động
 
-### Quy trình dọn dẹp
+### Quy trình dọn dẹp (Sequential Processing)
 ```
 1. KIỂM TRA KẾT NỐI
    ├── Kết nối ERPNext API
-   └── Kết nối các máy chấm công
+   └── Kiểm tra kết nối các máy chấm công
 
-2. TÌM NHÂN VIÊN LEFT
+2. TÌM NHÂN VIÊN LEFT (với bộ lọc ưu tiên)
    ├── Query: status = "Left" AND attendance_device_id != ""
-   ├── Lọc: current_date > relieving_date
-   └── Kết quả: Danh sách nhân viên cần dọn dẹp
+   ├── Bỏ qua: Nhân viên đã xử lý (từ tracking file JSON)
+   ├── PRIORITY 1: Permanently delete (> DELETE_AFTER_DAYS)
+   ├── PRIORITY 2: Clear templates (>= DELAY_DAYS)
+   └── Kết quả: Danh sách nhân viên cần xử lý
 
-3. XỬ LÝ TỪNG NHÂN VIÊN
-   ├── Bước 1: Xóa fingerprints trên ERPNext
+3. XỬ LÝ TỪNG NHÂN VIÊN (Tuần Tự)
+   ├── Xác định action type (Permanently delete hoặc Clear templates)
+   │
+   ├── Bước 1 (Tùy chọn): Xóa fingerprints trên ERPNext
    │   ├── Lấy danh sách custom_fingerprints
    │   ├── DELETE /api/resource/Fingerprint Data/{record_id}
    │   └── Ghi log kết quả
    │
-   ├── Bước 2: Xóa templates trên devices (song song)
-   │   ├── Kết nối từng máy chấm công
-   │   ├── Kiểm tra user_id tồn tại
-   │   ├── Xóa templates (giữ lại user_id)
-   │   └── Ghi log kết quả
+   ├── Bước 2: Xử lý TUẦN TỰ từng thiết bị (không dùng threading)
+   │   ├── Device 1:
+   │   │   ├── Kết nối thiết bị
+   │   │   ├── Kiểm tra user_id tồn tại
+   │   │   ├── Xóa user/template tùy theo action type
+   │   │   ├── Ghi log kết quả ngay lập tức
+   │   │   └── Ngắt kết nối
+   │   ├── Device 2: (tương tự)
+   │   ├── Device 3: (tương tự)
+   │   └── ... (tiếp tục với các thiết bị còn lại)
    │
-   └── Bước 3: Tổng hợp kết quả
-       ├── ERPNext success + Device success = Hoàn thành
-       ├── ERPNext success only = Đã dọn ERPNext
-       ├── Device success only = Đã dọn Device
-       └── Cả hai thất bại = Thất bại
+   └── Bước 3: Ghi tracking file JSON (CHỈ 1 LẦN)
+       ├── Xác định action type cuối cùng
+       ├── Ghi vào processed_left_employees.json
+       └── Tránh ghi đè và race condition
 
 4. BÁO CÁO KẾT QUẢ
    ├── Tổng số nhân viên xử lý
    ├── Số thành công/thất bại
    ├── Thời gian thực thi
-   └── Chi tiết từng trường hợp
+   └── Chi tiết từng thiết bị cho mỗi nhân viên
 ```
 
 ### Validation Logic
@@ -73,25 +95,68 @@ def is_ready_for_cleanup(employee):
 
 ## Tính năng chính
 
-- ✅ **Date Validation**: Chỉ dọn dẹp sau ngày nghỉ việc
-- ✅ **Dual System Cleanup**: Xóa cả ERPNext và devices
-- ✅ **Safe User ID**: Giữ lại user_id trên máy (cho attendance history)
-- ✅ **Parallel Processing**: Xử lý nhiều máy đồng thời
-- ✅ **Complete Audit**: Log chi tiết mọi thao tác
-- ✅ **Error Recovery**: Xử lý lỗi và tiếp tục với nhân viên khác
+- ✅ **Priority-Based Processing**: Ưu tiên xóa vĩnh viễn trước, sau đó mới xóa template
+- ✅ **Delay Configuration**: Linh hoạt cấu hình thời gian chờ (30 ngày / 60 ngày)
+- ✅ **Sequential Processing**: Xử lý thiết bị tuần tự, tránh race condition và lỗi đa luồng
+- ✅ **Smart Tracking**: File JSON tracking để tránh xử lý lại nhân viên đã xử lý
+- ✅ **Per-Device Logging**: Log riêng biệt cho từng thiết bị, dễ debug
+- ✅ **Single JSON Write**: Ghi tracking file chỉ 1 lần/nhân viên, tránh ghi đè
+- ✅ **Safe User ID**: Giữ lại user_id trên máy (chế độ Clear templates)
+- ✅ **Dual System Cleanup**: Xóa cả ERPNext và devices (tùy chọn)
+- ✅ **Complete Audit**: Log chi tiết từng thiết bị và mọi thao tác
+- ✅ **Error Recovery**: Xử lý lỗi và tiếp tục với nhân viên/thiết bị khác
 - ✅ **Dry Run Mode**: Xem trước không thay đổi dữ liệu
 
 ## Cấu trúc files
 
 ```
 biometric-attendance-sync-tool/
-├── clean_data_employee_left.py          # Script chính
-├── clean_data_employee_left.sh          # Shell wrapper
-├── clean_data_employee_left.md          # Documentation này
-├── erpnext_api_client.py                # ERPNext API (có delete method)
-├── local_config.py                      # Cấu hình
+├── manual_run_functions/
+│   ├── clean_data_employee_left.py          # Script chính
+│   ├── clean_data_employee_left.sh          # Shell wrapper
+│   └── clean_data_employee_left.md          # Documentation này
+├── erpnext_api_client.py                    # ERPNext API (có delete method)
+├── local_config.py                          # Cấu hình
 └── logs/clean_data_employee_left/
-    └── clean_left_employees.log         # Log dọn dẹp
+    ├── clean_left_employees.log             # Log dọn dẹp (chi tiết từng device)
+    └── processed_left_employees.json        # Tracking file (tránh xử lý lặp)
+```
+
+## Cấu hình trong local_config.py
+
+```python
+# Feature toggle - Bật/tắt tính năng
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = True  # True = Bật, False = Tắt
+
+# Chế độ 1: Xóa template (Clear Templates)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 30  # 30 ngày sau khi nghỉ việc
+
+# Chế độ 2: Xóa vĩnh viễn (Permanently Delete) - Ưu tiên cao hơn
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # 60 ngày sau khi nghỉ việc
+
+# Xóa fingerprints trên ERPNext (khuyến nghị: False)
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False
+
+# File tracking để tránh xử lý lặp
+PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'
+```
+
+### Ví dụ timeline xử lý
+
+```
+Ngày nghỉ việc: 2025-01-01
+
+├─ 2025-01-01 đến 2025-01-30 (0-29 ngày)
+│  └─ Không xử lý gì (chưa đủ delay)
+│
+├─ 2025-01-31 đến 2025-03-01 (30-59 ngày)
+│  └─ ✓ XÓA TEMPLATE (Chế độ 1)
+│     ├─ Delete user khỏi thiết bị
+│     └─ Recreate user không có template
+│
+└─ 2025-03-02 trở đi (60+ ngày)
+   └─ ✓ XÓA VĨNH VIỄN (Chế độ 2 - Ưu tiên)
+      └─ Delete user hoàn toàn khỏi thiết bị
 ```
 
 ## Cách sử dụng
@@ -152,40 +217,55 @@ $ ./clean_data_employee_left.sh
 STARTING LEFT EMPLOYEE DATA CLEANUP
 ================================================================================
 2025-08-20 23:00:15 - INFO - ERPNext API connection successful
-2025-08-20 23:00:16 - INFO - Found 3 Left employees ready for cleanup
-2025-08-20 23:00:16 - INFO - Starting cleanup process...
 
-[1/3] Processing EMP-001...
-2025-08-20 23:00:17 - INFO - Processing complete cleanup for Nguyen Van A (ID: 1001)
-2025-08-20 23:00:17 - INFO -   Step 1: Deleting ERPNext fingerprints for EMP-001
-2025-08-20 23:00:18 - INFO -     ✓ ERPNext: Deleted 3 fingerprint records
-2025-08-20 23:00:18 - INFO -   Step 2: Clearing device templates for EMP-001
-2025-08-20 23:00:19 - INFO -     ✓ Machine_8: Cleared templates
-2025-08-20 23:00:19 - INFO -     ✓ Machine_10: Cleared templates
-2025-08-20 23:00:19 - INFO -     • Machine_12: User not found (already cleared)
-2025-08-20 23:00:19 - INFO -     ✓ Machine_14: Cleared templates
-2025-08-20 23:00:19 - INFO -   ✓ Complete cleanup for EMP-001: Complete cleanup successful (ERPNext + devices)
+Filtering employees (priority order):
+  1. Permanently delete: left > 60 days ago
+  2. Clear templates: today >= relieving_date + 30 days
+  3. Skip already processed employees from tracking file
+  ✓ TIQN-0108: Ready to PERMANENTLY DELETE (left 120 days ago, >60 days)
+  ✓ TIQN-0025: Ready to CLEAR templates (left 45 days ago, >=30 days)
+Filter results: 2 ready to process, 5 already processed (skipped), 3 not ready yet
 
-[2/3] Processing EMP-002...
-... (similar output)
+2025-08-20 23:00:16 - INFO - Found 2 Left employees ready for cleanup
 
-[3/3] Processing EMP-003...
-... (similar output)
+[1/2] Processing TIQN-0108...
+2025-08-20 23:00:17 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 1 | ✓ Deleted
+2025-08-20 23:00:18 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 2 | • User not found on device (already processed)
+2025-08-20 23:00:19 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 3 | ✓ Deleted
+2025-08-20 23:00:20 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 4 | • User not found on device (already processed)
+2025-08-20 23:00:21 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 5 | ✓ Deleted
+2025-08-20 23:00:22 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 6 | ✓ Deleted
+2025-08-20 23:00:23 - INFO - TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 7 | • User not found on device (already processed)
+
+[2/2] Processing TIQN-0025...
+2025-08-20 23:00:24 - INFO - TIQN-0025 - Nguyễn Văn A (ID: 201) | Relieving: 2025-06-15 | Action: Clear templates | Device: Machine 1 | ✓ Cleared templates
+2025-08-20 23:00:25 - INFO - TIQN-0025 - Nguyễn Văn A (ID: 201) | Relieving: 2025-06-15 | Action: Clear templates | Device: Machine 2 | ✓ Cleared templates
+2025-08-20 23:00:26 - INFO - TIQN-0025 - Nguyễn Văn A (ID: 201) | Relieving: 2025-06-15 | Action: Clear templates | Device: Machine 3 | ✓ Cleared templates
+... (tiếp tục với các devices còn lại)
 
 ================================================================================
 LEFT EMPLOYEE CLEANUP COMPLETED
-Total Left employees processed: 3
-Successful cleanups: 3
-Failed cleanups: 0
-Total execution time: 15.67 seconds
+Total: 2 | Success: 2 | Failed: 0 | Time: 18.45s
 ================================================================================
 
-Successful cleanups:
-  ✓ EMP-001: Complete cleanup successful (ERPNext + devices)
-  ✓ EMP-002: Complete cleanup successful (ERPNext + devices)
-  ✓ EMP-003: ERPNext cleanup successful, devices already clean
-
 [SUCCESS] Left employee cleanup completed successfully!
+```
+
+### Log Format Mới (Per-Device)
+```
+Format: [Employee] - [Name] (ID: [DeviceID]) | Relieving: [Date] | Action: [Type] | Device: [DeviceName] | [Result]
+
+Ví dụ:
+TIQN-0108 - Hồ Thị Trầm (ID: 118) | Relieving: 2025-03-20 | Action: Permanently delete user | Device: Machine 1 | ✓ Deleted
+TIQN-0025 - Nguyễn Văn A (ID: 201) | Relieving: 2025-06-15 | Action: Clear templates | Device: Machine 2 | ✓ Cleared templates
+TIQN-0025 - Nguyễn Văn A (ID: 201) | Relieving: 2025-06-15 | Action: Clear templates | Device: Machine 3 | • User not found on device
+
+Kết quả có thể:
+✓ Deleted               - Đã xóa vĩnh viễn thành công
+✓ Cleared templates     - Đã xóa template thành công
+• User not found        - Không tìm thấy user (đã xử lý trước đó)
+✗ Device unreachable    - Không kết nối được thiết bị
+✗ Connection failed     - Kết nối thất bại
 ```
 
 ### Trường hợp không có nhân viên Left
@@ -380,14 +460,53 @@ if [ -f "$LOG_FILE" ] && [ $(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LO
 fi
 ```
 
+## Cải tiến phiên bản mới (v2.0)
+
+### So sánh với phiên bản cũ
+
+| Tính năng | Phiên bản cũ | Phiên bản mới (v2.0) |
+|-----------|--------------|----------------------|
+| **Xử lý thiết bị** | Song song (ThreadPoolExecutor) | Tuần tự (Sequential) |
+| **Log format** | 1 dòng tổng hợp | 1 dòng per device |
+| **JSON tracking** | Ghi nhiều lần (7 lần/employee) | Ghi 1 lần duy nhất |
+| **Race condition** | Có thể xảy ra | Hoàn toàn an toàn |
+| **Debug** | Khó xác định device nào lỗi | Rõ ràng từng device |
+| **Chế độ xóa** | Chỉ có Clear templates | 2 chế độ (Clear + Permanently Delete) |
+| **Ưu tiên xử lý** | Không có | Priority-based (Delete trước) |
+| **File corruption** | Có thể xảy ra | Atomic write, an toàn |
+
+### Lợi ích của Sequential Processing
+
+1. **Stability**: Không còn race condition, file corruption
+2. **Visibility**: Log chi tiết từng device, dễ debug
+3. **Reliability**: Ghi JSON 1 lần, đảm bảo dữ liệu chính xác
+4. **Maintainability**: Code đơn giản hơn, dễ bảo trì
+5. **Trade-off**: Chậm hơn một chút nhưng đáng tin cậy hơn nhiều
+
+### Performance Impact
+
+```
+7 devices × 1s/device = ~7-10 giây/employee (tuần tự)
+vs
+~2-3 giây/employee (song song nhưng có thể lỗi)
+
+Đánh đổi hợp lý: Chậm hơn ~5-7 giây nhưng an toàn 100%
+```
+
 ## Kết luận
 
-Tool `clean_data_employee_left` cung cấp giải pháp hoàn chỉnh và an toàn để dọn dẹp dữ liệu nhân viên nghỉ việc:
+Tool `clean_data_employee_left` v2.0 cung cấp giải pháp hoàn chỉnh và an toàn để dọn dẹp dữ liệu nhân viên nghỉ việc:
 
-- ✅ **Tự động hóa**: Chạy cron job hàng ngày
-- ✅ **An toàn**: Validation date, dry run, error handling
+- ✅ **Tự động hóa**: Chạy cron job hàng ngày (tích hợp trong erpnext_sync_all.py)
+- ✅ **An toàn tuyệt đối**: Sequential processing, atomic write, no race condition
+- ✅ **2 chế độ xóa linh hoạt**: Clear templates (30 ngày) → Permanently delete (60 ngày)
+- ✅ **Tracking thông minh**: JSON file tránh xử lý lặp
 - ✅ **Toàn diện**: Dọn cả ERPNext và devices
-- ✅ **Audit Trail**: Log chi tiết mọi thao tác
+- ✅ **Audit Trail chi tiết**: Log từng device, dễ debug
 - ✅ **Flexible**: Có thể chạy thủ công khi cần
 
-**Khuyến nghị**: Chạy cron job hàng ngày lúc 23:00 để tự động dọn dẹp nhân viên Left.
+**Khuyến nghị**:
+- Sử dụng cấu hình mặc định: 30 ngày (Clear) → 60 ngày (Delete)
+- Để `ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False` (bảo toàn lịch sử)
+- Kiểm tra log định kỳ: `tail -f logs/clean_data_employee_left/clean_left_employees.log`
+- Review tracking file: `cat logs/clean_data_employee_left/processed_left_employees.json`

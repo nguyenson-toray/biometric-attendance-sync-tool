@@ -89,8 +89,7 @@ cd "$SCRIPT_DIR" || {
     log "❌ ERROR: Cannot change to script directory: $SCRIPT_DIR"
     exit 1
 }
-
-log "🚀 ERPNext Sync All Service Wrapper Started"
+log "----------- 🚀 ERPNext Sync All Service Wrapper Started at $(date '+%Y-%m-%d %H:%M:%S') -----------" 
 log "   Script directory: $SCRIPT_DIR"
 log "   Python interpreter: $VENV_PYTHON"
 log "   Target script: $PYTHON_SCRIPT"

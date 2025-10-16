@@ -22,7 +22,7 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 
 
 # operational configs
-PULL_FREQUENCY = 5 # in minutes
+PULL_FREQUENCY = 3 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
 IMPORT_START_DATE = '20251009' # format: '20190501'  
 
@@ -56,18 +56,29 @@ re_sync_data_date_range = [] #=['from date','to date'] ['20250915','20250917'] ,
 #  set to [] to disable this feature after use
 # Feature toggles
 ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
-ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
+
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = True  # Clear fingerprint templates from devices (once per day)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 30  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete fingerprint records from ERPNext database (keep False)
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
+CLEAR_LEFT_USER_TEMPLATES_LOG_FILE = 'logs/clear_left_templates.log'  # Dedicated log file
+PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'  # Tracking file for processed employees (skip on subsequent runs)
+
+# Log cleanup configuration
+CLEAN_OLD_LOGS_DAYS = 7  # Clean logs older than N days (0 = disabled)
+
 SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
 SYNC_CHANGED_HOURS_BACK = 24
 
 # MongoDB sync feature toggle
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
-sync_only_machines_0 = False  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
+sync_only_machines_0 = True  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
 sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current+previous date
+
 # End-of-day re-sync configuration
 ENABLE_RESYNC_ON_DAY = True
-TIME_RESYNC_ON_DAY = ["08:15:00","22:30:00"]  # các mốc thời điểm re-sync, bỏ qua sync nếu rỗng []
-RESYNC_WINDOW_MINUTES_ON_DAY = 10  # ±5 phút từ thời điểm mục tiêu
+TIME_RESYNC_ON_DAY = ["08:10:00","22:30:00"]  # các mốc thời điểm re-sync, bỏ qua sync nếu rỗng []
+RESYNC_WINDOW_MINUTES_ON_DAY = 6  # ±3 phút từ thời điểm mục tiêu
 END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Dedicated log file for re-sync operations
 
 # Time synchronization configuration
@@ -165,17 +176,11 @@ sync_log_by_pass_period = [
     # {"start": "17:00", "end": "17:30", "reason": "Evening rush - employees clocking out"}
 ]
 
-# Bypass việc kết nối máy chấm công để sync user info, template từ ERPNext đến máy chấm công  
+# Bypass việc kết nối máy chấm công để sync user info, template từ ERPNext đến máy chấm công
 # Thời gian bận rộn: giờ vào ca sáng và chiều
 sync_user_info_by_pass_period = [
     # {"start": "07:30", "end": "07:55", "reason": "Morning rush - avoid device conflicts"},
     # {"start": "17:00", "end": "17:30", "reason": "Evening rush - avoid device conflicts"}
-]
-
-# Bypass việc xóa template của nhân viên đã nghỉ việc
-# Chỉ cho phép thực hiện sau 22:00
-clear_left_user_template_by_pass_period = [
-    # {"start": "00:00", "end": "22:00", "reason": "Working hours - delay template cleanup until after 22:00"}
 ]
 
 
@@ -186,21 +191,15 @@ def should_bypass_log_sync():
     return bypassed, period
 
 def should_bypass_user_info_sync():
-    """Check if should bypass user info/template sync to device"""  
+    """Check if should bypass user info/template sync to device"""
     bypassed, period = is_in_bypass_period(sync_user_info_by_pass_period)
-    return bypassed, period
-
-def should_bypass_clear_left_templates():
-    """Check if should bypass clearing left user templates"""
-    bypassed, period = is_in_bypass_period(clear_left_user_template_by_pass_period)
     return bypassed, period
 
 def get_bypass_status():
     """Get current bypass status for all operations"""
     log_bypass, log_period = should_bypass_log_sync()
     user_bypass, user_period = should_bypass_user_info_sync()
-    clear_bypass, clear_period = should_bypass_clear_left_templates()
-    
+
     return {
         'log_sync': {
             'bypassed': log_bypass,
@@ -211,11 +210,6 @@ def get_bypass_status():
             'bypassed': user_bypass,
             'period': user_period,
             'reason': user_period.get('reason') if user_period else None
-        },
-        'clear_left': {
-            'bypassed': clear_bypass,
-            'period': clear_period,
-            'reason': clear_period.get('reason') if clear_period else None
         }
     }
 
@@ -242,19 +236,12 @@ def log_bypass_status():
         print(f"    Lý do: {status['user_sync']['reason']}")
         period = status['user_sync']['period']
         print(f"    Thời gian: {period['start']} - {period['end']}")
-    
-    # Clear left templates status
-    clear_status = "BỎ QUA" if status['clear_left']['bypassed'] else "HOẠT ĐỘNG"
-    print(f"  Xóa Template Nhân Viên Nghỉ Việc: {clear_status}")
-    if status['clear_left']['bypassed']:
-        print(f"    Lý do: {status['clear_left']['reason']}")
-        period = status['clear_left']['period']
-        print(f"    Thời gian: {period['start']} - {period['end']}")
-    
+
     # Feature toggles
     print(f"\n  Cấu Hình Chức Năng:")
     print(f"    Sync User Info từ ERPNext: {'BẬT' if ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE else 'TẮT'}")
-    print(f"    Xóa Template Nhân Viên Nghỉ Việc: {'BẬT' if ENABLE_CLEAR_LEFT_USER_TEMPLATES else 'TẮT'}")
+    print(f"    Xóa Template NV Nghỉ Việc (Devices): {'BẬT' if ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES else 'TẮT'}")
+    print(f"    Xóa Template NV Nghỉ Việc (ERPNext): {'BẬT' if ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT else 'TẮT'}")
     print(f"    Chế độ Sync: {SYNC_USER_INFO_MODE}")
     
     print("=" * 60)
@@ -368,18 +355,55 @@ def should_skip_duplicate_log(message):
 
 def validate_time_periods():
     """Validate that time periods are properly formatted"""
-    all_periods = (sync_log_by_pass_period + 
-                  sync_user_info_by_pass_period + 
-                  clear_left_user_template_by_pass_period)
-    
+    all_periods = (sync_log_by_pass_period + sync_user_info_by_pass_period)
+
     for period in all_periods:
         try:
             datetime.datetime.strptime(period["start"], "%H:%M")
             datetime.datetime.strptime(period["end"], "%H:%M")
         except ValueError as e:
             raise ValueError(f"Invalid time format in period {period}: {e}")
-    
+
     return True
+
+def get_last_clear_left_templates_date():
+    """Get the last date when clear left templates was executed"""
+    import os
+
+    marker_file = os.path.join(LOGS_DIRECTORY, 'clean_data_employee_left', '.last_clear_left_templates')
+    if os.path.exists(marker_file):
+        try:
+            with open(marker_file, 'r') as f:
+                date_str = f.read().strip()
+                return datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        except:
+            return None
+    return None
+
+def set_last_clear_left_templates_date(date=None):
+    """Set the last date when clear left templates was executed"""
+    import os
+
+    if date is None:
+        date = datetime.date.today()
+
+    marker_file = os.path.join(LOGS_DIRECTORY, 'clean_data_employee_left', '.last_clear_left_templates')
+    marker_dir = os.path.dirname(marker_file)
+    os.makedirs(marker_dir, exist_ok=True)
+
+    with open(marker_file, 'w') as f:
+        f.write(date.strftime('%Y-%m-%d'))
+
+def should_run_clear_left_templates():
+    """Check if should run clear left templates (once per day)"""
+    if not ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES:
+        return False
+
+    last_run_date = get_last_clear_left_templates_date()
+    today = datetime.date.today()
+
+    # Run if never run before or last run was on a different day
+    return last_run_date is None or last_run_date < today
 
 # Validate configuration on import
 validate_time_periods()

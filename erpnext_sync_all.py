@@ -124,8 +124,8 @@ class ERPNextSyncService:
             print(f"  Error details: {traceback.format_exc()}")
             return False
     
-    def execute_sync_user_info_from_erpnext_to_device(self, bypass_clear_left=False):
-        """Execute sync_user_info_from_erpnext_to_device with optional bypass for clear left templates"""
+    def execute_sync_user_info_from_erpnext_to_device(self):
+        """Execute sync_user_info_from_erpnext_to_device"""
         try:
             print(f"\n[{datetime.datetime.now()}] Bắt đầu sync user info từ ERPNext đến devices...")
 
@@ -150,9 +150,6 @@ class ERPNextSyncService:
                 print("  Chế độ: Auto sync")
                 result = sync_tool.auto_sync()
 
-            if bypass_clear_left:
-                print("⚠ Xóa template nhân viên nghỉ việc bị bỏ qua do giới hạn thời gian")
-
             if result["success"]:
                 print("✓ Sync user info từ ERPNext đến devices hoàn thành")
                 print(f"  {result.get('message', 'Không có chi tiết')}")
@@ -163,6 +160,88 @@ class ERPNextSyncService:
 
         except Exception as e:
             print(f"✗ Sync user info từ ERPNext đến devices thất bại: {e}")
+            print(f"  Chi tiết lỗi: {traceback.format_exc()}")
+            return False
+
+    def execute_clear_left_templates(self):
+        """Execute clear left employee templates (once per day)"""
+        try:
+            delay_days = getattr(local_config, 'CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS', 7)
+            delete_after_days = getattr(local_config, 'ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS', 0)
+
+            print(f"\n[{datetime.datetime.now()}] Bắt đầu xóa template/user nhân viên nghỉ việc...")
+            print(f"  📋 Ưu tiên xử lý (kiểm tra theo thứ tự):")
+            if delete_after_days > 0:
+                print(f"     1. XÓA HOÀN TOÀN user: nhân viên nghỉ > {delete_after_days} ngày (ƯUTIÊN)")
+            else:
+                print(f"     1. Xóa hoàn toàn user: TẮT")
+            print(f"     2. Xóa template (tạo lại user): nhân viên nghỉ >= {delay_days} ngày (nếu không thuộc mục 1)")
+
+            # Import the cleanup module
+            import sys
+            import os
+            manual_functions_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'manual_run_functions')
+            if manual_functions_path not in sys.path:
+                sys.path.insert(0, manual_functions_path)
+
+            from clean_data_employee_left import CleanDataEmployeeLeft
+
+            # Create cleaner instance
+            cleaner = CleanDataEmployeeLeft()
+
+            # Check ERPNext connection
+            if not cleaner.test_erpnext_connection():
+                print("✗ Không thể kết nối ERPNext API")
+                return False
+
+            # Get left employees (filtered to only recently left employees)
+            left_employees = cleaner.get_left_employees_for_cleanup()
+
+            if not left_employees:
+                print("  Không có nhân viên nghỉ việc nào đủ điều kiện xử lý")
+                print(f"  (Không có nhân viên trong cửa sổ xử lý)")
+                # Mark as run even if no employees to process
+                local_config.set_last_clear_left_templates_date()
+                return True
+
+            print(f"  Tìm thấy {len(left_employees)} nhân viên đủ điều kiện xử lý")
+
+            # Process each employee
+            successful_cleanups = 0
+
+            for i, employee_data in enumerate(left_employees, 1):
+                employee_id = employee_data["employee_id"]
+                employee_name = employee_data["employee"]
+
+                print(f"\n  [{i}/{len(left_employees)}] Xử lý {employee_name}...")
+
+                # Step 1: Delete from ERPNext if enabled
+                if local_config.ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT:
+                    print(f"    Xóa fingerprints từ ERPNext...")
+                    erpnext_result = cleaner.delete_employee_fingerprints_from_erpnext(employee_id)
+                    if erpnext_result["success"]:
+                        print(f"    ✓ ERPNext: Đã xóa {erpnext_result['deleted_count']} fingerprint records")
+                    else:
+                        print(f"    ✗ ERPNext: {erpnext_result['message']}")
+
+                # Step 2: Clear templates from devices
+                print(f"    Xóa templates từ devices...")
+                result = cleaner.clean_left_employee_complete(employee_data)
+
+                if result["success"]:
+                    successful_cleanups += 1
+                    print(f"    ✓ {result['message']}")
+                else:
+                    print(f"    ✗ {result['message']}")
+
+            # Mark as run today
+            local_config.set_last_clear_left_templates_date()
+
+            print(f"\n✓ Hoàn thành xóa template: {successful_cleanups}/{len(left_employees)} nhân viên")
+            return successful_cleanups > 0
+
+        except Exception as e:
+            print(f"✗ Lỗi khi xóa template nhân viên nghỉ việc: {e}")
             print(f"  Chi tiết lỗi: {traceback.format_exc()}")
             return False
 
@@ -245,6 +324,44 @@ class ERPNextSyncService:
             print(f"✗ MongoDB sync thất bại: {e}")
             print(f"  Chi tiết lỗi: {traceback.format_exc()}")
             return False
+
+    def should_run_clean_logs(self):
+        """Check if should run log cleanup (once per day)"""
+        try:
+            import clean_old_logs
+            return clean_old_logs.should_run_cleanup()
+        except Exception as e:
+            print(f"Error checking clean logs status: {e}")
+            return False
+
+    def execute_clean_logs(self):
+        """Execute old log files cleanup (once per day)"""
+        try:
+            clean_days = getattr(local_config, 'CLEAN_OLD_LOGS_DAYS', 0)
+
+            print(f"\n[{datetime.datetime.now()}] Bắt đầu dọn dẹp log files cũ...")
+            print(f"  🧹 Cleaning logs older than {clean_days} days")
+
+            # Import the cleanup module
+            import clean_old_logs
+
+            # Execute cleanup
+            result = clean_old_logs.run_cleanup(dry_run=False, force=False)
+
+            if result["success"]:
+                print("✓ Dọn dẹp log files hoàn thành")
+                print(f"  - Files cleaned: {result.get('cleaned_files', 0)}")
+                print(f"  - Empty files deleted: {result.get('deleted_files', 0)}")
+                print(f"  - Space freed: {clean_old_logs.format_size(result.get('total_size_freed', 0))}")
+                return True
+            else:
+                print(f"• {result.get('message', 'No cleanup needed')}")
+                return True  # Not an error if already ran today
+
+        except Exception as e:
+            print(f"✗ Dọn dẹp log files thất bại: {e}")
+            print(f"  Chi tiết lỗi: {traceback.format_exc()}")
+            return False
     
     def execute_cycle(self):
         """Execute one complete sync cycle"""
@@ -288,23 +405,39 @@ class ERPNextSyncService:
         
         if local_config.ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE:
             user_bypass, user_period = local_config.should_bypass_user_info_sync()
-            
+
             if user_bypass:
                 reason = user_period.get('reason', 'Time-based bypass')
                 local_config.log_operation_decision("Sync User Info từ ERPNext đến Device", False, reason)
             else:
-                clear_bypass, clear_period = local_config.should_bypass_clear_left_templates()
-                
                 local_config.log_operation_decision("Sync User Info từ ERPNext đến Device", True, "Thời gian hoạt động")
-                if clear_bypass:
-                    clear_reason = clear_period.get('reason', 'Time-based bypass for clear left templates')
-                    print(f"  Ghi chú: {clear_reason}")
-                
-                if not self.execute_sync_user_info_from_erpnext_to_device(bypass_clear_left=clear_bypass):
+                if not self.execute_sync_user_info_from_erpnext_to_device():
                     cycle_success = False
         else:
             local_config.log_operation_decision("Sync User Info từ ERPNext đến Device", False, "Chức năng bị tắt")
-        
+
+        # =========================================================================
+        # STEP 3: Clear Left Employee Templates (once per day)
+        # =========================================================================
+
+        if local_config.should_run_clear_left_templates():
+            local_config.log_operation_decision("Xóa Template Nhân Viên Nghỉ Việc", True, "Chạy lần đầu trong ngày")
+            if not self.execute_clear_left_templates():
+                print("⚠ Clear left templates failed but continuing cycle")
+        elif local_config.ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES:
+            local_config.log_operation_decision("Xóa Template Nhân Viên Nghỉ Việc", False, "Đã chạy hôm nay")
+
+        # =========================================================================
+        # STEP 4: Clean Old Logs (once per day)
+        # =========================================================================
+
+        if self.should_run_clean_logs():
+            local_config.log_operation_decision("Dọn Dẹp Log Files Cũ", True, "Chạy lần đầu trong ngày")
+            if not self.execute_clean_logs():
+                print("⚠ Clean old logs failed but continuing cycle")
+        elif getattr(local_config, 'CLEAN_OLD_LOGS_DAYS', 0) > 0:
+            local_config.log_operation_decision("Dọn Dẹp Log Files Cũ", False, "Đã chạy hôm nay")
+
         # =========================================================================
         # CYCLE SUMMARY
         # =========================================================================
@@ -406,17 +539,30 @@ class ERPNextSyncService:
                     reason = user_period.get('reason', 'Time-based bypass')
                     local_config.log_operation_decision("END-OF-DAY User Info Sync", False, reason)
                 else:
-                    clear_bypass, clear_period = local_config.should_bypass_clear_left_templates()
-
                     local_config.log_operation_decision("END-OF-DAY User Info Sync", True, "Normal user sync logic")
-                    if clear_bypass:
-                        clear_reason = clear_period.get('reason', 'Time-based bypass for clear left templates')
-                        print(f"  Ghi chú: {clear_reason}")
-
-                    if not self.execute_sync_user_info_from_erpnext_to_device(bypass_clear_left=clear_bypass):
+                    if not self.execute_sync_user_info_from_erpnext_to_device():
                         print("⚠ User info sync failed during end-of-day cycle")
             else:
                 local_config.log_operation_decision("END-OF-DAY User Info Sync", False, "Chức năng bị tắt")
+
+            # =====================================================================
+            # OPTIONAL: Clear Left Templates (if not run yet today)
+            # =====================================================================
+
+            if local_config.should_run_clear_left_templates():
+                print(f"\n[🌙 END-OF-DAY] Xóa Template Nhân Viên Nghỉ Việc")
+                print("   🗑️ Clearing templates for left employees")
+
+                local_config.log_operation_decision("END-OF-DAY Clear Left Templates", True, "Chạy lần đầu trong ngày")
+                local_config.log_resync_operation("🗑️ STARTING CLEAR LEFT EMPLOYEE TEMPLATES")
+
+                if not self.execute_clear_left_templates():
+                    print("⚠ Clear left templates failed during end-of-day cycle")
+                    local_config.log_resync_operation("❌ Clear left templates FAILED during end-of-day cycle", "ERROR")
+                else:
+                    local_config.log_resync_operation("✅ Clear left templates COMPLETED successfully during end-of-day cycle")
+            elif local_config.ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES:
+                local_config.log_operation_decision("END-OF-DAY Clear Left Templates", False, "Đã chạy hôm nay")
 
             # =====================================================================
             # OPTIONAL: Time Sync (if enabled)

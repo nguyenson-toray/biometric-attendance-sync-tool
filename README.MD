@@ -148,9 +148,6 @@ sync_user_info_by_pass_period = [
     # {"start": "07:30", "end": "07:55", "reason": "Morning rush - avoid device conflicts"},
     # {"start": "17:00", "end": "17:30", "reason": "Evening rush - avoid device conflicts"}
 ]
-
-# Bypass clear left templates - hiện tại: TẮT
-clear_left_user_template_by_pass_period = []
 ```
 
 ### 🎛️ Feature Toggles (trong local_config.py)
@@ -158,8 +155,12 @@ clear_left_user_template_by_pass_period = []
 # Bật/tắt sync thông tin nhân viên - hiện tại: TẮT
 ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
-# Bật/tắt clear left templates - hiện tại: TẮT  
-ENABLE_CLEAR_LEFT_USER_TEMPLATES = False
+# Bật/tắt clear left templates - hiện tại: BẬT
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = True  # Clear from devices (once per day)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 7  # Wait N days after relieving before clearing (today >= relieving_date + 7 days)
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 1400  # Permanently delete users after N days (0 = disabled, PRIORITY 1 - checked FIRST)
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete from database
+PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/processed_left_employees.json'  # Track processed employees (skip on subsequent runs)
 
 # Chế độ sync: 'auto', 'full', 'changed'
 SYNC_USER_INFO_MODE = 'auto'
@@ -296,3 +297,8 @@ venv/bin/python3 erpnext_sync_all.py
 - End-of-day auto re-sync: Tự động chạy mỗi ngày để đảm bảo đầy đủ dữ liệu
 - Bypass time: Tránh conflict trong giờ rush
 - Log monitoring: Theo dõi `logs/logs_resync.log` để xem kết quả end-of-day re-sync
+
+**🚫 Kill processs **: 
+- ps aux | grep erpnext_sync_all | grep -v grep
+frappe    208657  1.3  0.1 116204 34176 pts/5    Sl+  16:37   0:00 ./venv/bin/python3 ./erpnext_sync_all.py
+- kill -9 208657
