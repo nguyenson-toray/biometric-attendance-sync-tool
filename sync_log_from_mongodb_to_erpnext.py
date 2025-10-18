@@ -32,13 +32,13 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 console_logger.addHandler(console_handler)
 
-# MongoDB connection settings
-MONGODB_HOST = "10.0.1.4"
-MONGODB_PORT = 27017
-MONGODB_DB = "tiqn"
-MONGODB_COLLECTION = "AttLog"
-MONGODB_USER = "DB\administrator"
-MONGODB_PASS = "itT0ray$"
+# MongoDB connection settings - now loaded from config
+MONGODB_HOST = getattr(config, 'MONGODB_HOST', "10.0.1.4")
+MONGODB_PORT = getattr(config, 'MONGODB_PORT', 27017)
+MONGODB_DB = getattr(config, 'MONGODB_DATABASE', "tiqn")
+MONGODB_COLLECTION = getattr(config, 'MONGODB_ATTLOG_COLLECTION', "AttLog")
+MONGODB_USER = getattr(config, 'MONGODB_USER', None)  # Optional
+MONGODB_PASS = getattr(config, 'MONGODB_PASS', None)  # Optional
 
 # ERPNext version detection
 ERPNEXT_VERSION = getattr(config, 'ERPNEXT_VERSION', 14)

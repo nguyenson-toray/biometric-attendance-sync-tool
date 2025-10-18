@@ -74,6 +74,24 @@ SYNC_CHANGED_HOURS_BACK = 24
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
 sync_only_machines_0 = True  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
 sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current+previous date
+# MongoDB OT sync configuration
+ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT = True
+SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE = '20251006'  # Format: 'YYYYMMDD'
+# =============================================================================
+# MONGODB CONNECTION SETTINGS (Shared for both attendance log & OT sync)
+# =============================================================================
+MONGODB_HOST = "10.0.1.4"
+MONGODB_PORT = 27017
+MONGODB_DATABASE = "tiqn"
+MONGODB_USER = "DB\\administrator"  # Optional - comment out if no auth
+MONGODB_PASS = "itT0ray$"  # Optional - comment out if no auth
+MONGODB_URI = f'mongodb://{MONGODB_HOST}:{MONGODB_PORT}/'  # Auto-generated from host:port
+
+# MongoDB collection names
+MONGODB_ATTLOG_COLLECTION = "AttLog"  # Attendance log collection
+MONGODB_OT_COLLECTION = "OtRegister"  # Overtime registration collection
+
+
 
 # End-of-day re-sync configuration
 ENABLE_RESYNC_ON_DAY = True

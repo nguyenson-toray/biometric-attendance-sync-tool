@@ -71,7 +71,16 @@ class ERPNextSyncService:
             print(f"   - Runs during end-of-day cycle")
         else:
             print(f"🗃️ MONGODB SYNC: DISABLED")
-            
+
+        # Display OT MongoDB sync configuration
+        if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
+            print(f"📋 OT MONGODB SYNC: ENABLED")
+            start_date = getattr(local_config, 'SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE', 'Not configured')
+            print(f"   - Start date filter: {start_date}")
+            print(f"   - Runs during end-of-day cycle (after MongoDB sync)")
+        else:
+            print(f"📋 OT MONGODB SYNC: DISABLED")
+
         print("=" * 80)
     
     def signal_handler(self, signum, _frame):
@@ -322,6 +331,49 @@ class ERPNextSyncService:
 
         except Exception as e:
             print(f"✗ MongoDB sync thất bại: {e}")
+            print(f"  Chi tiết lỗi: {traceback.format_exc()}")
+            return False
+
+    def execute_ot_mongodb_sync(self):
+        """Execute OT sync from MongoDB to ERPNext"""
+        try:
+            print(f"\n[{datetime.datetime.now()}] Bắt đầu sync OT từ MongoDB đến ERPNext...")
+
+            # Check if OT sync is enabled
+            if not getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
+                print("  OT MongoDB sync disabled in configuration")
+                return True
+
+            # Import the OT MongoDB sync module
+            import sync_ot_from_mongodb_to_erpnext
+
+            # Create syncer instance
+            syncer = sync_ot_from_mongodb_to_erpnext.OTSyncFromMongoDB()
+
+            # Execute OT sync
+            result = syncer.sync_ot_to_erpnext()
+
+            # Display results
+            if result['success']:
+                print(f"📊 OT MONGODB SYNC SUMMARY:")
+                print(f"   Total records: {result['total_records']}")
+                print(f"   Total requests: {result['total_requests']}")
+                print(f"   Created: {result['created']}")
+                print(f"   Skipped: {result['skipped']}")
+                if result.get('skipped_exists', 0) > 0:
+                    print(f"     - Already exists: {result['skipped_exists']}")
+                if result.get('skipped_conflicts', 0) > 0:
+                    print(f"     - Validation conflicts: {result['skipped_conflicts']}")
+                print(f"   Failed: {result['failed']}")
+                print(f"   Execution time: {result.get('execution_time', 0):.2f}s")
+                print("✓ Sync OT từ MongoDB đến ERPNext hoàn thành")
+                return True
+            else:
+                print(f"✗ Sync OT từ MongoDB đến ERPNext thất bại: {result['message']}")
+                return False
+
+        except Exception as e:
+            print(f"✗ OT MongoDB sync thất bại: {e}")
             print(f"  Chi tiết lỗi: {traceback.format_exc()}")
             return False
 
@@ -608,7 +660,27 @@ class ERPNextSyncService:
                     local_config.log_resync_operation("✅ MongoDB sync COMPLETED successfully during end-of-day cycle")
             else:
                 local_config.log_operation_decision("END-OF-DAY MongoDB Sync", False, "MongoDB sync disabled in configuration")
-            
+
+            # =====================================================================
+            # OPTIONAL: OT MongoDB Sync (if enabled)
+            # =====================================================================
+
+            if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
+                print(f"\n[🌙 END-OF-DAY] OT MongoDB Sync từ MongoDB đến ERPNext")
+                print("   📋 Syncing overtime registration from MongoDB to ERPNext")
+
+                local_config.log_operation_decision("END-OF-DAY OT MongoDB Sync", True, "End-of-day OT MongoDB synchronization")
+                local_config.log_resync_operation("📋 STARTING OT MONGODB SYNC FROM MONGODB TO ERPNEXT")
+                local_config.log_resync_operation(f"   📋 Start date filter: {getattr(local_config, 'SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE', 'Not configured')}")
+
+                if not self.execute_ot_mongodb_sync():
+                    print("⚠ OT MongoDB sync failed during end-of-day cycle")
+                    local_config.log_resync_operation("❌ OT MongoDB sync FAILED during end-of-day cycle", "ERROR")
+                else:
+                    local_config.log_resync_operation("✅ OT MongoDB sync COMPLETED successfully during end-of-day cycle")
+            else:
+                local_config.log_operation_decision("END-OF-DAY OT MongoDB Sync", False, "OT MongoDB sync disabled in configuration")
+
             # =====================================================================
             # END-OF-DAY CYCLE SUMMARY
             # =====================================================================
@@ -811,7 +883,16 @@ def main():
             print(f"    Runs during: End-of-day cycle")
         else:
             print(f"  🗃️ MongoDB sync: DISABLED")
-            
+
+        # Display OT MongoDB sync status
+        if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
+            print(f"  📋 OT MongoDB sync: ENABLED")
+            start_date = getattr(local_config, 'SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE', 'Not configured')
+            print(f"    Start date filter: {start_date}")
+            print(f"    Runs during: End-of-day cycle (after MongoDB sync)")
+        else:
+            print(f"  📋 OT MongoDB sync: DISABLED")
+
         local_config.log_bypass_status()
         return
     
