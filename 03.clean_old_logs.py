@@ -31,7 +31,23 @@ LOG_FILES_TO_CLEAN = [
     'logs/logs_resync.log',
     'logs/error.log',
     'logs/error_duplicate.log',
-    'logs/clean_data_employee_left/clean_left_employees.log'
+    'logs/clean_data_employee_left/clean_left_employees.log',
+    # Attendance success logs per machine
+    'logs/attendance_success_log_Machine 1.log',
+    'logs/attendance_success_log_Machine 2.log',
+    'logs/attendance_success_log_Machine 3.log',
+    'logs/attendance_success_log_Machine 4.log',
+    'logs/attendance_success_log_Machine 5.log',
+    'logs/attendance_success_log_Machine 6.log',
+    'logs/attendance_success_log_Machine 7.log',
+    # Attendance failed logs per machine
+    'logs/attendance_failed_log_Machine 1.log',
+    'logs/attendance_failed_log_Machine 2.log',
+    'logs/attendance_failed_log_Machine 3.log',
+    'logs/attendance_failed_log_Machine 4.log',
+    'logs/attendance_failed_log_Machine 5.log',
+    'logs/attendance_failed_log_Machine 6.log',
+    'logs/attendance_failed_log_Machine 7.log'
 ]
 
 # Marker file to track last run

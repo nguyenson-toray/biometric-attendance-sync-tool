@@ -222,27 +222,8 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
         else:
             # Check for specific error types for custom logging
             if "This employee already has a log with the same timestamp" in erpnext_message:
-                # Check if we're in re-sync mode
-                is_re_sync_mode = hasattr(config, 're_sync_data_date_range') and config.re_sync_data_date_range
-                
-                if is_re_sync_mode:
-                    # In re-sync mode: skip duplicate logging, just continue silently
-                    info_logger.info(f"Re-sync mode: Skipping duplicate - User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']}")
-                else:
-                    # Normal mode: log to error_duplicate.log as before
-                    with open(os.path.join(config.LOGS_DIRECTORY, 'error_duplicate.log'), 'a') as duplicate_log:
-                        duplicate_log.write("\t".join([
-                            str(datetime.datetime.now()),
-                            "DUPLICATE",
-                            str(erpnext_status_code),
-                            str(device_attendance_log['uid']),
-                            str(device_attendance_log['user_id']),
-                            str(device_attendance_log['timestamp'].timestamp()),
-                            str(device_attendance_log['punch']),
-                            str(device_attendance_log['status']),
-                            json.dumps(device_attendance_log, default=str)
-                        ]) + "\n")
-                    print(f"DUPLICATE: User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']} - logged to error_duplicate.log at {datetime.datetime.now()}")
+                # Skip all duplicate logging - just log to info and continue silently
+                info_logger.info(f"Skipping duplicate - User ID {device_attendance_log['user_id']} at {device_attendance_log['timestamp']}")
 
             elif EMPLOYEE_INACTIVE_ERROR_MESSAGE in erpnext_message:
                 # Custom logging for inactive employees
@@ -559,4 +540,16 @@ def run_single_cycle(bypass_device_connection=False):
         return False
 
 if __name__ == "__main__":
-    infinite_loop()
+    import argparse
+    parser = argparse.ArgumentParser(description='Sync attendance logs from devices to ERPNext')
+    parser.add_argument('--loop', action='store_true', help='Run in infinite loop mode')
+    args = parser.parse_args()
+
+    if args.loop:
+        infinite_loop()
+    else:
+        # Run single cycle when executed manually
+        print("Running single sync cycle...")
+        success = run_single_cycle()
+        print(f"Sync cycle {'completed successfully' if success else 'failed'}")
+        exit(0 if success else 1)

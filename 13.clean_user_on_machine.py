@@ -48,8 +48,8 @@ class UserCleaner:
         self.max_workers = min(len(self.devices), 10)
 
     def load_keep_user_id(self):
-        """Load user IDs to keep from keep_user_id.txt file"""
-        keep_user_file = os.path.join(current_dir, 'keep_user_id.txt')
+        """Load user IDs to keep from 13.keep_user_id.txt file"""
+        keep_user_file = os.path.join(current_dir, '13.keep_user_id.txt')
         keep_user_id = []
 
         try:
@@ -64,10 +64,10 @@ class UserCleaner:
             return keep_user_id
 
         except FileNotFoundError:
-            logger.error(f"keep_user_id.txt file not found at {keep_user_file}")
+            logger.error(f"13.keep_user_id.txt file not found at {keep_user_file}")
             return []
         except Exception as e:
-            logger.error(f"Error reading keep_user_id.txt: {str(e)}")
+            logger.error(f"Error reading 13.keep_user_id.txt: {str(e)}")
             return []
 
     def check_device_connection(self, device_config):
@@ -242,10 +242,10 @@ class UserCleaner:
         logger.info("=" * 80)
 
         if not self.keep_user_id:
-            logger.error("No users to keep found in keep_user_id.txt file")
+            logger.error("No users to keep found in 13.keep_user_id.txt file")
             return {
                 "success": False,
-                "message": "No users to keep found in keep_user_id.txt file",
+                "message": "No users to keep found in 13.keep_user_id.txt file",
                 "total_deleted": 0,
                 "successful_devices": 0,
                 "execution_time": 0

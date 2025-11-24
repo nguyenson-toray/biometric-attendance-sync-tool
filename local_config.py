@@ -24,7 +24,7 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 # operational configs
 PULL_FREQUENCY = 3 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
-IMPORT_START_DATE = '20251009' # format: '20190501'  
+IMPORT_START_DATE = '20251113' # format: '20190501'  
 
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
@@ -57,7 +57,7 @@ re_sync_data_date_range = [] #=['from date','to date'] ['20250915','20250917'] ,
 # Feature toggles
 ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
-ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = True  # Clear fingerprint templates from devices (once per day)
+ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = False  # Clear fingerprint templates from devices (once per day)
 CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 30  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete fingerprint records from ERPNext database (keep False)
 ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
@@ -65,7 +65,7 @@ CLEAR_LEFT_USER_TEMPLATES_LOG_FILE = 'logs/clear_left_templates.log'  # Dedicate
 PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'  # Tracking file for processed employees (skip on subsequent runs)
 
 # Log cleanup configuration
-CLEAN_OLD_LOGS_DAYS = 7  # Clean logs older than N days (0 = disabled)
+CLEAN_OLD_LOGS_DAYS = 3  # Clean logs older than N days (0 = disabled)
 
 SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
 SYNC_CHANGED_HOURS_BACK = 24
@@ -73,10 +73,10 @@ SYNC_CHANGED_HOURS_BACK = 24
 # MongoDB sync feature toggle
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
 sync_only_machines_0 = True  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
-sync_log_from_mongodb_to_erpnext_date_range = []  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for current+previous date
+sync_log_from_mongodb_to_erpnext_date_range = ['20251026','20251124']  # Format: ['YYYYMMDD', 'YYYYMMDD'] or [] for last 7 days
 # MongoDB OT sync configuration
 ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT = True
-SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE = '20251006'  # Format: 'YYYYMMDD'
+SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE = '20251026'  # Format: 'YYYYMMDD'
 # =============================================================================
 # MONGODB CONNECTION SETTINGS (Shared for both attendance log & OT sync)
 # =============================================================================
@@ -94,15 +94,14 @@ MONGODB_OT_COLLECTION = "OtRegister"  # Overtime registration collection
 
 
 # End-of-day re-sync configuration
-ENABLE_RESYNC_ON_DAY = True
+ENABLE_RESYNC_ON_DAY = False
 TIME_RESYNC_ON_DAY = ["08:10:00","22:30:00"]  # các mốc thời điểm re-sync, bỏ qua sync nếu rỗng []
 RESYNC_WINDOW_MINUTES_ON_DAY = 6  # ±3 phút từ thời điểm mục tiêu
 END_OF_DAY_RESYNC_LOG_FILE = 'logs/logs_resync.log'  # Dedicated log file for re-sync operations
 
-# Time synchronization configuration
-ENABLE_TIME_SYNC = True  # Enable time sync to devices,  # Only run on Sunday if enabled
-TIME_SYNC_AND_RESTART_AT_NIGHT = True  # Sync time and restart device during night process
-TIME_SYNC_MAX_DIFF_SECONDS = 3  # Only sync if time difference > 60 seconds
+# Time synchronization and restart configuration (Sunday 23:00 only)
+ENABLE_TIME_SYNC_AND_RESTART_AT_23H_OF_SUNDAY = True  # Sync time & restart all devices at 23:00 on Sunday
+TIME_SYNC_MAX_DIFF_SECONDS = 2  # Only sync if time difference > 2 seconds
 TIME_SYNC_TIMEOUT_SECONDS = 3  # Connection timeout for time sync
 TIME_SYNC_LOG_FILE = 'logs/time_sync.log'  # Dedicated log file for time sync operations
 # FingerID	Code	Name
@@ -546,21 +545,41 @@ def log_time_sync_operation(message, level="INFO"):
     except Exception as e:
         print(f"Failed to write time sync log: {e}")
 
-def should_run_time_sync():
-    """Check if time sync should run based on night schedule
+def should_run_time_sync_and_restart():
+    """Check if time sync and restart should run - only on Sunday at 23:00
 
     Returns:
-        bool: True if time sync should run now
+        bool: True if time sync and restart should run now
     """
-    if not ENABLE_TIME_SYNC or not TIME_SYNC_AND_RESTART_AT_NIGHT or datetime.date.today().weekday() <= 5:
-        # Only run on Sunday if enabled
+    if not ENABLE_TIME_SYNC_AND_RESTART_AT_23H_OF_SUNDAY:
         return False
 
-    # Use same logic as re-sync on day
-    return should_run_end_of_day_resync()
+    # Only run on Sunday (weekday = 6)
+    if datetime.date.today().weekday() != 6:
+        return False
+
+    # Check if within time window 23:00 ± 3 minutes
+    current_time = datetime.datetime.now()
+    target_hour = 23
+    target_minute = 0
+    window_minutes = RESYNC_WINDOW_MINUTES_ON_DAY // 2  # ±3 minutes
+
+    # Create target time for today
+    target_time = current_time.replace(
+        hour=target_hour,
+        minute=target_minute,
+        second=0,
+        microsecond=0
+    )
+
+    # Calculate time difference in minutes
+    time_diff_minutes = abs((current_time - target_time).total_seconds()) / 60
+
+    # Check if we're within the window
+    return time_diff_minutes <= window_minutes
 
 def sync_time_to_devices(devices_list=None, force=False):
-    """Synchronize time from server to biometric devices
+    """Synchronize time from server to biometric devices (without restart)
 
     Args:
         devices_list (list): List of devices to sync time to. If None, uses all devices.
@@ -572,7 +591,7 @@ def sync_time_to_devices(devices_list=None, force=False):
     from zk import ZK
     import datetime
 
-    if not ENABLE_TIME_SYNC and not force:
+    if not ENABLE_TIME_SYNC_AND_RESTART_AT_23H_OF_SUNDAY and not force:
         log_time_sync_operation("Time sync disabled in configuration", "INFO")
         return {"success": False, "message": "Time sync disabled"}
 
@@ -588,7 +607,7 @@ def sync_time_to_devices(devices_list=None, force=False):
         "details": []
     }
 
-    log_time_sync_operation(f"Starting time sync to {len(devices_list)} devices")
+    log_time_sync_operation(f"Starting time sync to {len(devices_list)} devices (Sunday 23:00)")
     log_time_sync_operation(f"Server time: {server_time}")
 
     for device in devices_list:
@@ -634,14 +653,8 @@ def sync_time_to_devices(devices_list=None, force=False):
                 device_result["success"] = True
                 results["skipped_count"] += 1
                 log_time_sync_operation(f"Skipping {device_id} - time difference within tolerance")
-
-                # Disconnect before continuing to next device
-                try:
-                    conn.disconnect()
-                except Exception as disc_error:
-                    log_time_sync_operation(f"Warning: Failed to disconnect from {device_id}: {disc_error}", "WARNING")
             else:
-                # Sync time to device
+                # Sync time to device (without restart)
                 conn.set_time(server_time)
                 device_result["new_time"] = server_time
                 device_result["success"] = True
@@ -649,28 +662,12 @@ def sync_time_to_devices(devices_list=None, force=False):
                 results["success_count"] += 1
                 log_time_sync_operation(f"Time synced to {device_id} successfully")
 
-                # Disconnect BEFORE restart (device will be disconnected after restart anyway)
-                try:
-                    conn.disconnect()
-                    log_time_sync_operation(f"Disconnected from {device_id} before restart")
-                except Exception as disc_error:
-                    log_time_sync_operation(f"Warning: Failed to disconnect from {device_id}: {disc_error}", "WARNING")
-
-                # Restart device after time sync and disconnect
-                try:
-                    # Reconnect briefly to send restart command
-                    conn = zk.connect()
-                    if conn:
-                        conn.restart()
-                        log_time_sync_operation(f"Device {device_id} restart command sent successfully")
-                        device_result["message"] += " and device restarted"
-                        # No need to disconnect again as device will restart
-                    else:
-                        log_time_sync_operation(f"Warning: Could not reconnect to restart {device_id}", "WARNING")
-                        device_result["message"] += " (restart failed - reconnection failed)"
-                except Exception as restart_error:
-                    log_time_sync_operation(f"Warning: Failed to restart device {device_id}: {restart_error}", "WARNING")
-                    device_result["message"] += " (restart failed)"
+            # Disconnect from device
+            try:
+                conn.disconnect()
+                log_time_sync_operation(f"Disconnected from {device_id}")
+            except Exception as disc_error:
+                log_time_sync_operation(f"Warning: Failed to disconnect from {device_id}: {disc_error}", "WARNING")
 
         except Exception as e:
             device_result["message"] = f"Error: {str(e)}"
@@ -681,5 +678,73 @@ def sync_time_to_devices(devices_list=None, force=False):
 
     # Log summary
     log_time_sync_operation(f"Time sync completed - Success: {results['success_count']}, Failed: {results['failed_count']}, Skipped: {results['skipped_count']}")
+
+    return results
+
+def restart_all_devices(devices_list=None):
+    """Restart all biometric devices
+
+    Args:
+        devices_list (list): List of devices to restart. If None, uses all devices.
+
+    Returns:
+        dict: Summary of restart results
+    """
+    from zk import ZK
+
+    if devices_list is None:
+        devices_list = devices
+
+    results = {
+        "total_devices": len(devices_list),
+        "success_count": 0,
+        "failed_count": 0,
+        "details": []
+    }
+
+    log_time_sync_operation(f"Starting restart for {len(devices_list)} devices")
+
+    for device in devices_list:
+        device_id = device['device_id']
+        device_ip = device['ip']
+        device_result = {
+            "device_id": device_id,
+            "device_ip": device_ip,
+            "success": False,
+            "message": ""
+        }
+
+        try:
+            log_time_sync_operation(f"Restarting device {device_id} ({device_ip})")
+
+            # Connect to device
+            zk = ZK(device_ip, port=4370, timeout=TIME_SYNC_TIMEOUT_SECONDS, force_udp=True)
+            conn = zk.connect()
+
+            if not conn:
+                device_result["message"] = "Failed to connect to device"
+                results["failed_count"] += 1
+                log_time_sync_operation(f"Failed to connect to {device_id} for restart", "ERROR")
+                results["details"].append(device_result)
+                continue
+
+            # Send restart command
+            conn.restart()
+            device_result["success"] = True
+            device_result["message"] = "Restart command sent successfully"
+            results["success_count"] += 1
+            log_time_sync_operation(f"Device {device_id} restart command sent successfully")
+
+            # No need to disconnect as device will restart
+
+        except Exception as e:
+            device_result["message"] = f"Error: {str(e)}"
+            results["failed_count"] += 1
+            log_time_sync_operation(f"Error restarting device {device_id}: {e}", "ERROR")
+
+        results["details"].append(device_result)
+
+    # Log summary
+    log_time_sync_operation(f"Restart completed - Success: {results['success_count']}, Failed: {results['failed_count']}")
 
     return results

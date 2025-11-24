@@ -7,7 +7,7 @@
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_SCRIPT="$SCRIPT_DIR/sync_from_master_device_to_erpnext.py"
+PYTHON_SCRIPT="$SCRIPT_DIR/12.sync_from_master_device_to_erpnext.py"
 VENV_DIR="$SCRIPT_DIR/venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
 LOG_DIR="$SCRIPT_DIR/logs/sync_from_master_device_to_erpnext"

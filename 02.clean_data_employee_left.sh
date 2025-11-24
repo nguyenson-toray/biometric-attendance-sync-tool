@@ -7,7 +7,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_PATH="$SCRIPT_DIR/venv/bin/python3"
-SCRIPT_PATH="$SCRIPT_DIR/clean_data_employee_left.py"
+SCRIPT_PATH="$SCRIPT_DIR/02.clean_data_employee_left.py"
 LOG_FILE="$SCRIPT_DIR/logs/clean_data_employee_left/clean_left_employees.log"
 
 # Colors

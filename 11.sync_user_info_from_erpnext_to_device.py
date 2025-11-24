@@ -23,7 +23,12 @@ sys.path.append(current_dir)
 
 import local_config
 from erpnext_api_client import ERPNextAPIClient
-from sync_user_info_state import SyncState
+import importlib.util
+spec = importlib.util.spec_from_file_location("sync_user_info_state",
+    os.path.join(current_dir, "11.sync_user_info_state.py"))
+sync_user_info_state_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sync_user_info_state_module)
+SyncState = sync_user_info_state_module.SyncState
 
 # Setup logging to sync_from_erpnext_to_device folder
 sync_logs_dir = os.path.join(local_config.LOGS_DIRECTORY, 'sync_from_erpnext_to_device')

@@ -200,19 +200,19 @@ def sync_attendance_data():
             console_logger.info(f"Syncing date range: {start_date_str} to {end_date_str}")
             print(f"📅 Syncing date range: {start_date_str} to {end_date_str}")
         else:
-            # Use current date and previous date (2 days total)
+            # Use last 7 days (current date and 6 days before)
             current_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            previous_date = current_date - timedelta(days=1)
+            start_date = current_date - timedelta(days=6)  # 7 days total including today
             end_date = current_date.replace(hour=23, minute=59, second=59)
 
             query = {
                 "timestamp": {
-                    "$gte": previous_date,
+                    "$gte": start_date,
                     "$lte": end_date
                 }
             }
 
-            print(f"📅 Syncing: yesterday + today")
+            print(f"📅 Syncing: last 7 days")
 
         # Add machineNo filter if configured
         if sync_only_machines_0:
