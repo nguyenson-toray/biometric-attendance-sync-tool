@@ -5,22 +5,28 @@ Sync attendance data from MongoDB to ERPNext Employee Checkin
 
 import requests
 import json
+import os
 from pymongo import MongoClient
 from datetime import datetime, timezone, timedelta
 import logging
 import sys
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add the path to access local_config
-sys.path.append('/home/sonnt/frappe-bench/apps/biometric-attendance-sync-tool')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 import local_config as config
+from manual_input_utils import prompt_date_range
 
 # Configure logging - only log errors to file for better performance
+log_dir = os.path.join(current_dir, 'logs')
+os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.ERROR,  # Changed from INFO to ERROR for performance
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/home/frappe/frappe-bench/apps/biometric-attendance-sync-tool/sync_log_from_mongodb_to_erpnext.txt', mode='a')  # File output
+        logging.FileHandler(os.path.join(log_dir, 'sync_log_from_mongodb_to_erpnext.txt'), mode='a')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -43,8 +49,8 @@ MONGODB_PASS = getattr(config, 'MONGODB_PASS', None)  # Optional
 # ERPNext version detection
 ERPNEXT_VERSION = getattr(config, 'ERPNEXT_VERSION', 14)
 
-# Date sync configuration - now loaded from local_config
-# Use config.sync_log_from_mongodb_to_erpnext_date_range
+# Date sync configuration
+# Defaults to last 7 days if not specified
 
 # Performance settings
 MAX_WORKERS = 200  # Maximum parallel workers (increased from 100)
@@ -161,16 +167,22 @@ def process_record(record, user_id_ignored_set):
         }
         return ('error', error_detail)
 
-def sync_attendance_data():
-    """Main function to sync attendance data with maximum parallel processing"""
+def sync_attendance_data(date_range=None):
+    """Main function to sync attendance data with maximum parallel processing
+
+    Args:
+        date_range (list): Optional [from_date, to_date] in YYYYMMDD format.
+                          Defaults to last 7 days if not provided.
+    """
     try:
         # Connect to MongoDB
         client = connect_to_mongodb()
         db = client[MONGODB_DB]
         collection = db[MONGODB_COLLECTION]
 
-        # Get date range from config
-        date_range = getattr(config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
+        # Use parameter date_range or default to empty (will use last 7 days)
+        if date_range is None:
+            date_range = []
         user_id_ignored = getattr(config, 'user_id_inorged', [])
         sync_only_machines_0 = getattr(config, 'sync_only_machines_0', True)
 
@@ -303,9 +315,26 @@ def run_mongodb_sync():
 
 def main():
     """Main entry point"""
+    parser = argparse.ArgumentParser(description='Sync attendance data from MongoDB to ERPNext')
+    parser.add_argument('--manual', action='store_true', help='Manual mode - prompt for date range')
+    args = parser.parse_args()
+
+    date_range = None
+
     try:
+        # Manual mode - prompt for date range
+        if args.manual:
+            date_range = prompt_date_range(
+                prompt_message="Sync Attendance Data from MongoDB to ERPNext",
+                allow_empty=True,
+                default_days_back=7
+            )
+            if not date_range:
+                print("Operation cancelled")
+                return
+
         # Run sync
-        result = sync_attendance_data()
+        result = sync_attendance_data(date_range)
 
         print(f"\n=== MongoDB to ERPNext Sync Results ===")
         print(f"Total records found: {result['total_records']}")

@@ -29,6 +29,7 @@ import os
 import sys
 import json
 import logging
+import argparse
 from datetime import datetime, timedelta
 from collections import defaultdict
 from pymongo import MongoClient
@@ -39,6 +40,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 import local_config
+from manual_input_utils import prompt_single_date
 
 # Setup logging
 log_dir = os.path.join(local_config.LOGS_DIRECTORY, 'ot_sync')
@@ -58,7 +60,13 @@ logger = logging.getLogger(__name__)
 class OTSyncFromMongoDB:
     """Sync Overtime Registration from MongoDB to ERPNext"""
 
-    def __init__(self):
+    def __init__(self, start_date=None):
+        """Initialize OT sync
+
+        Args:
+            start_date (str): Optional start date in YYYYMMDD format.
+                            Defaults to today if not provided.
+        """
         self.erpnext_url = local_config.ERPNEXT_URL
         self.api_key = local_config.ERPNEXT_API_KEY
         self.api_secret = local_config.ERPNEXT_API_SECRET
@@ -68,8 +76,14 @@ class OTSyncFromMongoDB:
         self.mongodb_db = getattr(local_config, 'MONGODB_DATABASE', 'tiqn')
         self.mongodb_collection = getattr(local_config, 'MONGODB_OT_COLLECTION', 'OtRegister')
 
-        # Sync configuration
-        self.start_date = getattr(local_config, 'SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE', '20251006')
+        # Sync configuration - use parameter or default to today
+        if start_date:
+            self.start_date = start_date
+        else:
+            # Default to today
+            self.start_date = datetime.now().strftime('%Y%m%d')
+            logger.info(f"No start_date provided, defaulting to today: {self.start_date}")
+
         self.last_id_file = os.path.join(log_dir, 'last_synced_ot_id.txt')
 
         # MongoDB client
@@ -361,7 +375,7 @@ class OTSyncFromMongoDB:
                 request_date_dt = datetime.now()
 
             request_date = request_date_dt.strftime('%Y-%m-%d')
-
+            request_no = str(request_no)
             # Prepare child records (Overtime Registration Detail)
             ot_employees = []
             skipped_employees = []  # Track skipped employees due to conflicts
@@ -436,6 +450,7 @@ class OTSyncFromMongoDB:
             doc = {
                 'doctype': 'Overtime Registration',
                 'name': request_no,
+                'reason_general': f'Sync from MongoDB: Request number: {request_no}',
                 'naming_series': 'OTR-.YY..MM..DD.-.####.',
                 'request_date': request_date,
                 'ot_employees': ot_employees
@@ -698,8 +713,26 @@ class OTSyncFromMongoDB:
 
 def main():
     """Main function for standalone execution"""
+    parser = argparse.ArgumentParser(description='Sync Overtime Registration from MongoDB to ERPNext')
+    parser.add_argument('--manual', action='store_true', help='Manual mode - prompt for start date')
+    args = parser.parse_args()
+
+    start_date = None
+
     try:
-        syncer = OTSyncFromMongoDB()
+        # Manual mode - prompt for start date
+        if args.manual:
+            date_str = prompt_single_date(
+                prompt_message="Sync OT from MongoDB to ERPNext - Enter Start Date",
+                allow_today=True
+            )
+            if not date_str:
+                print("Operation cancelled")
+                return
+            start_date = date_str
+
+        # Create syncer and run sync
+        syncer = OTSyncFromMongoDB(start_date=start_date)
         result = syncer.sync_ot_to_erpnext()
 
         if result['success']:

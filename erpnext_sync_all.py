@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-ERPNext Biometric Attendance Sync Service
-Master service that coordinates erpnext_sync and sync_from_erpnext_to_device
-with time-based bypass logic and auto-restart capability
+ERPNext Biometric Attendance Sync Service - Automatic Mode
+Runs automated sync functions only:
+- sync_log_from_device_to_erpnext
+- clean_data_employee_left
+- clean_old_logs
+- sync_log_from_mongodb_to_erpnext
+- sync_ot_from_mongodb_to_erpnext
+
+For manual operations, use erpnext_re_sync_all.py
 """
 
 import os
@@ -223,14 +229,14 @@ class ERPNextSyncService:
             local_config.log_operation_decision("Clean Logs", True, "First run")
             self.execute_clean_logs()
 
-        # MongoDB sync (if enabled)
+        # MongoDB sync (if enabled) - Run at END of each cycle
         if getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
-            local_config.log_operation_decision("MongoDB Sync", True, "Enabled")
+            local_config.log_operation_decision("MongoDB Sync", True, "End of cycle")
             self.execute_mongodb_sync()
 
-        # OT MongoDB sync (if enabled)
+        # OT MongoDB sync (if enabled) - Run at END of each cycle (after MongoDB sync)
         if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
-            local_config.log_operation_decision("OT MongoDB Sync", True, "Enabled")
+            local_config.log_operation_decision("OT MongoDB Sync", True, "End of cycle")
             self.execute_ot_mongodb_sync()
 
         cycle_duration = (datetime.datetime.now() - cycle_start).total_seconds()
@@ -332,40 +338,36 @@ def main():
         print(f"  ERPNext URL: {local_config.ERPNEXT_URL}")
         print(f"  Number of devices: {len(local_config.devices)}")
         
-        # Display re-sync status
-        if hasattr(local_config, 're_sync_data_date_range') and local_config.re_sync_data_date_range:
+        # Display re-sync status (check both new and old config names)
+        re_sync_range = None
+        if hasattr(local_config, 're_sync_log_from_att_machine_to_erpnext_date_range') and local_config.re_sync_log_from_att_machine_to_erpnext_date_range:
+            re_sync_range = local_config.re_sync_log_from_att_machine_to_erpnext_date_range
+        elif hasattr(local_config, 're_sync_data_date_range') and local_config.re_sync_data_date_range:
+            re_sync_range = local_config.re_sync_data_date_range
+            print(f"  ⚠️  DEPRECATED: Using old config 're_sync_data_date_range'")
+            print(f"      Please migrate to 're_sync_log_from_att_machine_to_erpnext_date_range'")
+
+        if re_sync_range:
             print(f"  🔄 Re-sync mode: ENABLED")
-            print(f"    Date range: {local_config.re_sync_data_date_range[0]} to {local_config.re_sync_data_date_range[1]}")
+            print(f"    Date range: {re_sync_range[0]} to {re_sync_range[1]}")
             print(f"    Action: Sync ALL logs in this period (fill missing entries)")
+            print(f"    WARNING: This affects AUTO service! Set to [] after completion.")
         else:
             print(f"  📅 Re-sync mode: DISABLED (normal processing)")
-        
-        # Display end-of-day re-sync status (moved to resync_data_manual.py)
-        print(f"  🌙 End-of-day re-sync: MOVED to resync_data_manual.py")
-        print(f"    Run: python resync_data_manual.py --resync")
-
-        # Display time sync & restart status (moved to resync_data_manual.py)
-        print(f"  🕒 Time sync & restart: MOVED to resync_data_manual.py")
-        print(f"    Run: python resync_data_manual.py --time-sync-and-restart")
 
         # Display MongoDB sync status
         if getattr(local_config, 'ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT', False):
             print(f"  🗃️ MongoDB sync: ENABLED")
-            date_range = getattr(local_config, 'sync_log_from_mongodb_to_erpnext_date_range', [])
-            if date_range and len(date_range) == 2:
-                print(f"    Date range: {date_range[0]} to {date_range[1]}")
-            else:
-                print(f"    Mode: Current date only")
-            print(f"    Runs during: End-of-day cycle")
+            print(f"    Date range: Last 7 days (default)")
+            print(f"    Runs at: END of each cycle")
         else:
             print(f"  🗃️ MongoDB sync: DISABLED")
 
         # Display OT MongoDB sync status
         if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
             print(f"  📋 OT MongoDB sync: ENABLED")
-            start_date = getattr(local_config, 'SYNC_OT_FROM_MONGODB_TO_ERPNEXT_START_DATE', 'Not configured')
-            print(f"    Start date filter: {start_date}")
-            print(f"    Runs during: End-of-day cycle (after MongoDB sync)")
+            print(f"    Start date filter: Today (default)")
+            print(f"    Runs at: END of each cycle (after MongoDB sync)")
         else:
             print(f"  📋 OT MongoDB sync: DISABLED")
 

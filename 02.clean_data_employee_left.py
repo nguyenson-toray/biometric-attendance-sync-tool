@@ -730,42 +730,82 @@ class CleanDataEmployeeLeft:
 def main():
     """Main function for command line usage"""
     import argparse
-    
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from manual_input_utils import prompt_integer
+
     parser = argparse.ArgumentParser(description='Clean data for Left employees - Delete fingerprints from ERPNext and clear templates from devices')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be cleaned without actually doing it')
-    
+    parser.add_argument('--manual', action='store_true', help='Manual mode - prompt for configuration values')
+
     args = parser.parse_args()
-    
-    if args.dry_run:
-        logger.info("DRY RUN MODE - No actual changes will be made")
-        # For dry run, just show what would be processed
-        cleaner = CleanDataEmployeeLeft()
-        if cleaner.test_erpnext_connection():
-            left_employees = cleaner.get_left_employees_for_cleanup()
-            if left_employees:
-                logger.info(f"Would clean {len(left_employees)} Left employees:")
-                for emp in left_employees:
-                    logger.info(f"  - {emp['employee']}: {emp['employee_name']} (ID: {emp['attendance_device_id']}, Relieving: {emp['relieving_date']})")
-            else:
-                logger.info("No Left employees found ready for cleanup")
-        else:
-            logger.error("ERPNext API connection failed")
-        return
-    
+
+    # Save original config values
+    original_relieving_delay = local_config.CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS
+    original_delete_after = local_config.ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS
+
     try:
+        # Manual mode - prompt for values
+        if args.manual:
+            print("\n" + "="*60)
+            print("MANUAL MODE - Clean Data Employee Left")
+            print("="*60)
+
+            relieving_delay = prompt_integer(
+                f"Wait N days after relieving_date before clearing templates\n(Current: {original_relieving_delay} days)",
+                default_value=original_relieving_delay,
+                min_value=0
+            )
+            if relieving_delay is not None:
+                local_config.CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = relieving_delay
+
+            delete_after = prompt_integer(
+                f"Permanently delete user from devices after N days since relieving_date\n(Current: {original_delete_after} days, 0 = disabled)",
+                default_value=original_delete_after,
+                min_value=0
+            )
+            if delete_after is not None:
+                local_config.ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = delete_after
+
+            print(f"\nConfiguration:")
+            print(f"  Clear templates delay: {local_config.CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS} days")
+            print(f"  Delete user delay: {local_config.ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS} days")
+            print("="*60)
+
+        if args.dry_run:
+            logger.info("DRY RUN MODE - No actual changes will be made")
+            # For dry run, just show what would be processed
+            cleaner = CleanDataEmployeeLeft()
+            if cleaner.test_erpnext_connection():
+                left_employees = cleaner.get_left_employees_for_cleanup()
+                if left_employees:
+                    logger.info(f"Would clean {len(left_employees)} Left employees:")
+                    for emp in left_employees:
+                        logger.info(f"  - {emp['employee']}: {emp['employee_name']} (ID: {emp['attendance_device_id']}, Relieving: {emp['relieving_date']})")
+                else:
+                    logger.info("No Left employees found ready for cleanup")
+            else:
+                logger.error("ERPNext API connection failed")
+            return
+
+        # Run cleanup
         cleaner = CleanDataEmployeeLeft()
         result = cleaner.run_cleanup()
-        
+
         if result["success"]:
             logger.info(f"Cleanup completed successfully: {result['message']}")
             exit(0)
         else:
             logger.error(f"Cleanup failed: {result['message']}")
             exit(1)
-            
+
     except Exception as e:
         logger.error(f"Fatal error during cleanup: {str(e)}")
         raise
+    finally:
+        # Restore original config values
+        local_config.CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = original_relieving_delay
+        local_config.ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = original_delete_after
 
 if __name__ == "__main__":
     main()

@@ -88,7 +88,7 @@ def main(bypass_device_connection=False):
             if hasattr(config,'shift_type_device_mapping'):
                 update_shift_last_sync_timestamp(config.shift_type_device_mapping)
             
-            # Note: User will manually set re_sync_data_date_range = [] after completion
+            # Note: User will manually set re_sync_log_from_att_machine_to_erpnext_date_range = [] after completion
             
             status.set('mission_accomplished_timestamp', str(datetime.datetime.now()))
             status.save()
@@ -120,8 +120,16 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
     # Determine starting index based on mode
     index_of_last = 0  # Start from beginning by default to ensure no logs are missed
     
-    # Check if we're in re-sync mode
-    is_re_sync_mode = hasattr(config, 're_sync_data_date_range') and config.re_sync_data_date_range
+    # Check if we're in re-sync mode (support both old and new config names)
+    re_sync_date_range = None
+    if hasattr(config, 're_sync_log_from_att_machine_to_erpnext_date_range') and config.re_sync_log_from_att_machine_to_erpnext_date_range:
+        re_sync_date_range = config.re_sync_log_from_att_machine_to_erpnext_date_range
+    elif hasattr(config, 're_sync_data_date_range') and config.re_sync_data_date_range:
+        # Backward compatibility with old name
+        re_sync_date_range = config.re_sync_data_date_range
+        info_logger.warning("DEPRECATED: Using old config name 're_sync_data_date_range'. Please migrate to 're_sync_log_from_att_machine_to_erpnext_date_range'")
+
+    is_re_sync_mode = re_sync_date_range is not None
     
     if is_re_sync_mode:
         # In re-sync mode: process ALL logs, ignore previous success log
@@ -135,7 +143,15 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
         else:
             info_logger.info(f"No previous success log found for device {device['device_id']}, starting from beginning")
         
-        import_start_date = _safe_convert_date(config.IMPORT_START_DATE, "%Y%m%d")
+        # Get import start date (defaults to today if not configured)
+        import_start_date = None
+        if hasattr(config, 'IMPORT_START_DATE') and config.IMPORT_START_DATE:
+            import_start_date = _safe_convert_date(config.IMPORT_START_DATE, "%Y%m%d")
+        else:
+            # Default to today (beginning of day)
+            import_start_date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            info_logger.info(f"No IMPORT_START_DATE configured, defaulting to today: {import_start_date.strftime('%Y-%m-%d')}")
+
         if last_line or import_start_date:
             last_user_id = None
             last_timestamp = None
@@ -167,14 +183,14 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
     if is_re_sync_mode:
         # In re-sync mode: process ALL logs, then filter by date range
         try:
-            start_date = datetime.datetime.strptime(config.re_sync_data_date_range[0], "%Y%m%d").date()
-            end_date = datetime.datetime.strptime(config.re_sync_data_date_range[1], "%Y%m%d").date()
-            
+            start_date = datetime.datetime.strptime(re_sync_date_range[0], "%Y%m%d").date()
+            end_date = datetime.datetime.strptime(re_sync_date_range[1], "%Y%m%d").date()
+
             # Filter ALL logs by date range (ignore index_of_last)
-            filtered_logs = [log for log in device_attendance_logs 
+            filtered_logs = [log for log in device_attendance_logs
                            if start_date <= log['timestamp'].date() <= end_date]
-            
-            info_logger.info(f"Device {device['device_id']}: Re-sync mode - Date range filter applied [{config.re_sync_data_date_range[0]} to {config.re_sync_data_date_range[1]}], "
+
+            info_logger.info(f"Device {device['device_id']}: Re-sync mode - Date range filter applied [{re_sync_date_range[0]} to {re_sync_date_range[1]}], "
                            f"processing {len(filtered_logs)} logs (from {len(device_attendance_logs)} total logs)")
             
         except Exception as e:
@@ -435,7 +451,10 @@ def setup_logger(name, log_file, level=logging.INFO, formatter=None):
     if not formatter:
         formatter = logging.Formatter('%(asctime)s\t%(levelname)s\t%(message)s')
 
-    handler = RotatingFileHandler(log_file, maxBytes=10000000, backupCount=50)
+    # Use config from local_config.py (default: 10MB file, 5 backups)
+    max_bytes = getattr(local_config, 'LOG_FILE_MAX_BYTES', 10 * 1024 * 1024)
+    backup_count = getattr(local_config, 'LOG_BACKUP_COUNT', 5)
+    handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
     handler.setFormatter(formatter)
 
     logger = logging.getLogger(name)
