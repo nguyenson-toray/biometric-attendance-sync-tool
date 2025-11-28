@@ -26,7 +26,7 @@ logging.basicConfig(
     level=logging.ERROR,  # Changed from INFO to ERROR for performance
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(log_dir, 'sync_log_from_mongodb_to_erpnext.txt'), mode='a')
+        logging.FileHandler(os.path.join(log_dir, 'sync_log_from_mongodb_to_erpnext.log'), mode='a')
     ]
 )
 logger = logging.getLogger(__name__)

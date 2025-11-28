@@ -452,13 +452,14 @@ def setup_logger(name, log_file, level=logging.INFO, formatter=None):
         formatter = logging.Formatter('%(asctime)s\t%(levelname)s\t%(message)s')
 
     # Use config from local_config.py (default: 10MB file, 5 backups)
-    max_bytes = getattr(local_config, 'LOG_FILE_MAX_BYTES', 10 * 1024 * 1024)
-    backup_count = getattr(local_config, 'LOG_BACKUP_COUNT', 5)
+    max_bytes = getattr(config, 'LOG_FILE_MAX_BYTES', 10 * 1024 * 1024)
+    backup_count = getattr(config, 'LOG_BACKUP_COUNT', 5)
     handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
     handler.setFormatter(formatter)
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False  # Don't propagate to root logger
     if not logger.hasHandlers():
         logger.addHandler(handler)
 

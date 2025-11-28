@@ -24,8 +24,16 @@ ERPNEXT_URL = f'http://{SERVER_NAME}'
 # operational configs
 PULL_FREQUENCY = 3 # in minutes
 LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
-# Note: IMPORT_START_DATE removed - defaults to today in AUTO mode, prompted in MANUAL mode  
 
+# =============================================================================
+# IMPORT_START_DATE - Start date for syncing attendance logs from devices
+# =============================================================================
+# Format: 'YYYYMMDD' (e.g., '20251126' = November 26, 2025) 
+# AUTO MODE Behavior: 
+# 1. IMPORT_START_DATE = '20251126'  → Sync logs from Nov 26, 2025 onwards
+# 2. IMPORT_START_DATE = '' or None or undefined    → Default to TODAY (00:00:00)
+
+IMPORT_START_DATE = '20251126'  # Current: Nov 26, 2025 - Keep this for safety
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
     #- ip - device IP Address
@@ -53,14 +61,14 @@ ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = False  # Clear fingerprint templates from devices (once per day)
 CLEAR_LEFT_USER_TEMPLATES_ON_DATE_OF_MONTH = [10] # Days of month to run clearing (e.g., [10,25] = run on 10th and 25th of each month; [] = every day)
-CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 50  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 45  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete fingerprint records from ERPNext database (keep False)
-ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 90  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
 CLEAR_LEFT_USER_TEMPLATES_LOG_FILE = 'logs/clear_left_templates.log'  # Dedicated log file
 PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'  # Tracking file for processed employees (skip on subsequent runs)
 
 # Log cleanup configuration
-CLEAN_OLD_LOGS_DAYS = 3  # Clean logs older than N days (0 = disabled)
+CLEAN_OLD_LOGS_DAYS = 5  # Clean logs older than N days (0 = disabled)
 
 # Log rotation configuration
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10MB per log file
@@ -96,27 +104,13 @@ MONGODB_OT_COLLECTION = "OtRegister"  # Overtime registration collection
 
 # NOTE: MANUAL MODE ONLY configs (ENABLE_RESYNC_ON_DAY, ENABLE_TIME_SYNC_AND_RESTART, etc.)
 # have been moved to erpnext_re_sync_all.py
-# FingerID	Code	Name
-# 55	NK-01	NK-01-HT Hien
-# 58	NK-02	NK-02-NT Thao
-# 161	NK-03	NK-03-TTM Hoa
-# 623	NK-04	NK-04-NTN Thu
-# 916	NK-05	NK-05-NTT Vy
-# 920	NK-06	NK-06-NT Luon
-# 3000	NK-07	NK-07-TTM Hoa
-# 3001	NK-08	NK-08-TT Can
-# 3002	NK-09	NK-09-DT Yen
-# 6004	NK-10	NK-10-NT Can
-# 6005	NK-11	NK-11-DT Loan
 
 print(f'\n------------------ START AT {datetime.datetime.now()} ------------------')
 print(f'- ERPNext URL: {ERPNEXT_URL}')
-print(f'- ERPNext API Key: {ERPNEXT_API_KEY}')
-print(f'- ERPNext API Secret: {ERPNEXT_API_SECRET}')
+print(f'- ERPNext API : Key: {ERPNEXT_API_KEY}  | Secret: {ERPNEXT_API_SECRET}') 
 print(f'- Devices: {devices}')
 print(f'- Pull frequency: {PULL_FREQUENCY} minutes')
-print(f'- Logs directory: {LOGS_DIRECTORY}')
-print(f'- User IDs (Finger ID) to be ignored: {user_id_inorged}')
+print(f'- Logs directory: {LOGS_DIRECTORY}') 
 print('------------------------------------------------------------------')
 
 # shift_type_device_mapping = [
@@ -319,24 +313,23 @@ validate_time_periods()
 # =============================================================================
 # FINGER MAPPING UTILITIES
 # =============================================================================
-# Standardized finger mapping functions for consistent finger index/name conversion
-# across all biometric sync operations
+# Standardized finger mapping function for converting finger index to name
 
 def get_finger_name(finger_index):
     """Get standardized finger name from index
-    
+
     Args:
         finger_index (int): Finger index from biometric device (0-9)
-        
+
     Returns:
         str: Standardized finger name
     """
     finger_names = {
         0: "Left Little",
         1: "Left Ring",
-        2: "Left Middle", 
+        2: "Left Middle",
         3: "Left Index",
-        4: "Left Thumb", 
+        4: "Left Thumb",
         5: "Right Thumb",
         6: "Right Index",
         7: "Right Middle",
@@ -344,71 +337,3 @@ def get_finger_name(finger_index):
         9: "Right Little"
     }
     return finger_names.get(finger_index, f"Finger {finger_index}")
-
-def get_finger_index(finger_name):
-    """Get finger index from standardized name
-    
-    Args:
-        finger_name (str): Standardized finger name
-        
-    Returns:
-        int: Finger index for biometric device (-1 if not found)
-    """
-    finger_map = {
-        'Left Little': 0,
-        'Left Ring': 1,
-        'Left Middle': 2,
-        'Left Index': 3,
-        'Left Thumb': 4,  
-        'Right Thumb': 5,
-        'Right Index': 6,
-        'Right Middle': 7,
-        'Right Ring': 8,
-        'Right Little': 9
-    }
-    return finger_map.get(finger_name, -1)
-
-def get_all_finger_mappings():
-    """Get complete finger index to name mapping
-    
-    Returns:
-        dict: Complete mapping of finger indices to names
-    """
-    return {
-        0: "Left Little",
-        1: "Left Ring",
-        2: "Left Middle", 
-        3: "Left Index",
-        4: "Left Thumb", 
-        5: "Right Thumb",
-        6: "Right Index",
-        7: "Right Middle",
-        8: "Right Ring",
-        9: "Right Little"
-    }
-
-def validate_finger_index(finger_index):
-    """Validate if finger index is within valid range
-    
-    Args:
-        finger_index (int): Finger index to validate
-        
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    return isinstance(finger_index, int) and 0 <= finger_index <= 9
-
-def validate_finger_name(finger_name):
-    """Validate if finger name is a recognized standard name
-
-    Args:
-        finger_name (str): Finger name to validate
-
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    valid_names = {
-        'Left Little', 'Left Ring', 'Left Middle', 'Left Index', 'Left Thumb',
-        'Right Thumb', 'Right Index', 'Right Middle', 'Right Ring', 'Right Little'
-    }
-    return finger_name in valid_names
