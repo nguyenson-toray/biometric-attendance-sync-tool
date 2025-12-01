@@ -31,8 +31,11 @@ LOG_FILES_TO_CLEAN = [
     'logs/logs_resync.log',
     'logs/error.log',
     'logs/error_duplicate.log',
+    'logs/service.log',  # Service AUTO mode log
     'logs/clean_data_employee_left/clean_left_employees.log',
     'logs/sync_log_from_mongodb_to_erpnext.log',  # MongoDB sync log
+    'logs/ot_sync/sync_ot.log',  # OT sync log
+    'logs/sync_from_erpnext_to_device/sync_to_device.log',  # Sync to device log
     # Attendance success logs per machine
     'logs/attendance_success_log_Machine 1.log',
     'logs/attendance_success_log_Machine 2.log',

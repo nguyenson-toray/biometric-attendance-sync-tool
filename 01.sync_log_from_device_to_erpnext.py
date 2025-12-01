@@ -63,7 +63,7 @@ def main(bypass_device_connection=False):
             info_logger.info("Cleared for lift off!")
             for device in config.devices:
                 device_attendance_logs = None
-                info_logger.info("Processing Device: "+ device['device_id'])
+                # info_logger.info("Processing Device: "+ device['device_id'])
                 dump_file = get_dump_file_name_and_directory(device['device_id'], device['ip'])
                 if os.path.exists(dump_file):
                     info_logger.error('Device Attendance Dump Found in Log Directory. This can mean the program crashed unexpectedly. Retrying with dumped data.')
@@ -77,7 +77,7 @@ def main(bypass_device_connection=False):
                     status.save()
                     if os.path.exists(dump_file):
                         os.remove(dump_file)
-                    info_logger.info("Successfully processed Device: "+ device['device_id'])
+                    # info_logger.info("Successfully processed Device: "+ device['device_id'])
                 except Exception as e:
                     error_logger.exception('exception when calling pull_process_and_push_data function for device'+json.dumps(device, default=str))
                     # Keep dump file if it exists to allow recovery on next run
@@ -92,7 +92,7 @@ def main(bypass_device_connection=False):
             
             status.set('mission_accomplished_timestamp', str(datetime.datetime.now()))
             status.save()
-            info_logger.info("Mission Accomplished!")
+            # info_logger.info("Mission Accomplished!")
     except:
         error_logger.exception('exception has occurred in the main function...')
 
@@ -116,7 +116,7 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
     
     # Sort logs by timestamp to ensure proper processing order
     device_attendance_logs.sort(key=lambda x: x['timestamp'])
-    info_logger.info(f"Device {device['device_id']}: Fetched {len(device_attendance_logs)} logs, range: {device_attendance_logs[0]['timestamp']} to {device_attendance_logs[-1]['timestamp']}")
+    # Log will be combined with processing status later
     # Determine starting index based on mode
     index_of_last = 0  # Start from beginning by default to ensure no logs are missed
     
@@ -200,7 +200,19 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
     else:
         # Normal mode: start from index_of_last
         filtered_logs = device_attendance_logs[index_of_last:]
-        info_logger.info(f"Device {device['device_id']}: Normal mode - processing {len(filtered_logs)} logs, starting from index {index_of_last}")
+
+        # Combined log: Fetched info + Processing status in one line
+        total_logs = len(device_attendance_logs)
+        range_start = device_attendance_logs[0]['timestamp']
+        range_end = device_attendance_logs[-1]['timestamp']
+
+        if len(filtered_logs) > 0:
+            first_timestamp = filtered_logs[0]['timestamp']
+            last_timestamp = filtered_logs[-1]['timestamp']
+            info_logger.info(f"Device {device['device_id']}: Fetched {total_logs} logs, Processing {len(filtered_logs)} new records, range: {range_start} to {range_end}")
+        else:
+            # No new records
+            info_logger.info(f"Device {device['device_id']}: Fetched {total_logs} logs, No new records, range: {range_start} to {range_end}")
     
     for device_attendance_log in filtered_logs:
         punch_direction = device['punch_direction']
@@ -307,9 +319,9 @@ def get_all_attendance_from_device(ip, port=4370, timeout=30, device_id=None, cl
         conn = zk.connect()
         x = conn.disable_device()
         # device is disabled when fetching data
-        info_logger.info("\t".join((ip, "Device Disable Attempted. Result:", str(x))))
+        # info_logger.info("\t".join((ip, "Device Disable Attempted. Result:", str(x))))
         attendances = conn.get_attendance()
-        info_logger.info("\t".join((ip, "Attendances Fetched:", str(len(attendances)))))
+        # info_logger.info("\t".join((ip, "Attendances Fetched:", str(len(attendances)))))
         status.set(f'{device_id}_push_timestamp', None)
         status.set(f'{device_id}_pull_timestamp', str(datetime.datetime.now()))
         status.save()
@@ -323,7 +335,7 @@ def get_all_attendance_from_device(ip, port=4370, timeout=30, device_id=None, cl
                 x = conn.clear_attendance()
                 info_logger.info("\t".join((ip, "Attendance Clear Attempted. Result:", str(x))))
         x = conn.enable_device()
-        info_logger.info("\t".join((ip, "Device Enable Attempted. Result:", str(x))))
+        # info_logger.info("\t".join((ip, "Device Enable Attempted. Result:", str(x))))
     except:
         error_logger.exception(str(ip)+' exception when fetching from device...')
         raise Exception('Device fetch failed.')

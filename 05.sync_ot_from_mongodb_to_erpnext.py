@@ -46,15 +46,23 @@ from manual_input_utils import prompt_single_date
 log_dir = os.path.join(local_config.LOGS_DIRECTORY, 'ot_sync')
 os.makedirs(log_dir, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_dir, 'sync_ot.log')),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Create dedicated logger with explicit handlers (avoid basicConfig conflicts)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.propagate = False  # Don't propagate to root logger
+
+# Clear existing handlers to avoid duplicates when module is reloaded
+logger.handlers.clear()
+
+# Add file handler
+file_handler = logging.FileHandler(os.path.join(log_dir, 'sync_ot.log'))
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+
+# Add console handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
 
 
 class OTSyncFromMongoDB:
@@ -82,7 +90,7 @@ class OTSyncFromMongoDB:
         else:
             # Default to today
             self.start_date = datetime.now().strftime('%Y%m%d')
-            logger.info(f"No start_date provided, defaulting to today: {self.start_date}")
+            # logger.info(f"No start_date provided, defaulting to today: {self.start_date}")
 
         self.last_id_file = os.path.join(log_dir, 'last_synced_ot_id.txt')
 
@@ -100,7 +108,7 @@ class OTSyncFromMongoDB:
 
             # Test connection
             self.mongo_client.server_info()
-            logger.info(f"✓ Connected to MongoDB: {self.mongodb_db}.{self.mongodb_collection}")
+            # logger.info(f"✓ Connected to MongoDB: {self.mongodb_db}.{self.mongodb_collection}")
             return True
 
         except Exception as e:
@@ -111,7 +119,7 @@ class OTSyncFromMongoDB:
         """Disconnect from MongoDB"""
         if self.mongo_client:
             self.mongo_client.close()
-            logger.info("✓ Disconnected from MongoDB")
+            # logger.info("✓ Disconnected from MongoDB")
 
     def get_last_synced_id(self):
         """Get last synced _id from file"""
@@ -258,7 +266,7 @@ class OTSyncFromMongoDB:
             if request_no:
                 grouped[request_no].append(record)
 
-        logger.info(f"Grouped {len(deduplicated_records)} unique records into {len(grouped)} requests")
+        # logger.info(f"Grouped {len(deduplicated_records)} unique records into {len(grouped)} requests")
         return dict(grouped)
 
     def check_ot_registration_exists(self, request_no):

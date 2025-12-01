@@ -31,7 +31,7 @@ sys.path.append(current_dir)
 
 # Load shared configuration
 import local_config
-from manual_input_utils import prompt_date_range, prompt_single_date
+from manual_input_utils import prompt_date_range, prompt_single_date, prompt_integer
 
 # =============================================================================
 # MANUAL MODE CONSTANTS
