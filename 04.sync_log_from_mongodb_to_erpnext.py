@@ -209,7 +209,7 @@ def sync_attendance_data(date_range=None):
                 }
             }
 
-            console_logger.info(f"Syncing date range: {start_date_str} to {end_date_str}")
+            # Date range info will be logged at the end
             print(f"📅 Syncing date range: {start_date_str} to {end_date_str}")
         else:
             # Use last 7 days (current date and 6 days before)
@@ -240,7 +240,7 @@ def sync_attendance_data(date_range=None):
 
         # Convert cursor to list for parallel processing
         records = list(cursor)
-        console_logger.info(f"Found {len(records)} records to process")
+        # Log will be combined with result later
         print(f"📊 Total records: {len(records)}")
 
         # Process all records in parallel with max workers
@@ -282,7 +282,15 @@ def sync_attendance_data(date_range=None):
             session.close()
             session = None
 
-        console_logger.info(f"Sync completed: {total_processed} processed, {total_skipped} skipped, {total_errors} errors")
+        # Build comprehensive log message
+        if date_range and isinstance(date_range, list) and len(date_range) == 2:
+            date_info = f"From {date_range[0]} to {date_range[1]}"
+        else:
+            date_info = "Last 7 days"
+
+        filter_info = f"machineNo=0" if sync_only_machines_0 else "All machines"
+
+        console_logger.info(f"Fetching Att log from MongoDB with [{filter_info}] : {date_info} : Found {len(records)} records : {total_processed} processed, {total_skipped} skipped, {total_errors} errors")
 
         return {
             "processed": total_processed,

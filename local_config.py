@@ -61,9 +61,9 @@ ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = False  # Clear fingerprint templates from devices (once per day)
 CLEAR_LEFT_USER_TEMPLATES_ON_DATE_OF_MONTH = [10] # Days of month to run clearing (e.g., [10,25] = run on 10th and 25th of each month; [] = every day)
-CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 45  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 46  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete fingerprint records from ERPNext database (keep False)
-ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 76  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
 CLEAR_LEFT_USER_TEMPLATES_LOG_FILE = 'logs/clear_left_templates.log'  # Dedicated log file
 PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'  # Tracking file for processed employees (skip on subsequent runs)
 

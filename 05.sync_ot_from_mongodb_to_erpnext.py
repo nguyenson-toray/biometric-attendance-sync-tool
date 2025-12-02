@@ -127,7 +127,7 @@ class OTSyncFromMongoDB:
             try:
                 with open(self.last_id_file, 'r') as f:
                     last_id = int(f.read().strip())
-                    logger.info(f"Last synced OT _id: {last_id}")
+                    # Log will be combined with fetch result
                     return last_id
             except Exception as e:
                 logger.warning(f"Failed to read last synced ID: {e}")
@@ -163,18 +163,22 @@ class OTSyncFromMongoDB:
             if last_id:
                 query['_id'] = {'$gt': last_id}
 
-            logger.info(f"Fetching OT records with query: otDate >= {self.start_date}")
+            # Build filter description
+            filter_info = f"otDate >= {self.start_date}"
             if last_id:
-                logger.info(f"  Filtering _id > {last_id}")
+                filter_info += f" & _id > {last_id}"
 
             # Fetch records sorted by _id
             cursor = self.collection.find(query).sort('_id', 1)
             records = list(cursor)
 
-            logger.info(f"✓ Fetched {len(records)} OT records from MongoDB")
-
+            # Combined log: result + filters in one line
             if records:
-                logger.info(f"  ID range: {records[0]['_id']} -> {records[-1]['_id']}")
+                id_range = f" (ID range: {records[0]['_id']} -> {records[-1]['_id']})"
+            else:
+                id_range = ""
+
+            logger.info(f"Fetched {len(records)} OT records from MongoDB: Filtering: {filter_info}{id_range}")
 
             return records
 
@@ -512,9 +516,7 @@ class OTSyncFromMongoDB:
         Returns:
             dict: Sync result summary
         """
-        logger.info("=" * 80)
-        logger.info("STARTING OT SYNC FROM MONGODB TO ERPNEXT")
-        logger.info("=" * 80)
+        # Removed header log - will be combined with fetch result
 
         start_time = datetime.now()
 
@@ -537,7 +539,7 @@ class OTSyncFromMongoDB:
             records = self.fetch_ot_records_from_mongodb()
 
             if not records:
-                logger.info("No new OT records to sync")
+                # Already logged "Fetched 0 OT records" above
                 return {
                     'success': True,
                     'message': 'No new records',
