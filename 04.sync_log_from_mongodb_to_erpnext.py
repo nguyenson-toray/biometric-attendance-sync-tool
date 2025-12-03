@@ -50,7 +50,8 @@ MONGODB_PASS = getattr(config, 'MONGODB_PASS', None)  # Optional
 ERPNEXT_VERSION = getattr(config, 'ERPNEXT_VERSION', 14)
 
 # Date sync configuration
-# Defaults to last 7 days if not specified
+# Defaults to SYNC_LOG_FROM_MONGODB_TO_ERPNEXT_LAST_N_DAYS if not specified
+DEFAULT_SYNC_DAYS = getattr(config, 'SYNC_LOG_FROM_MONGODB_TO_ERPNEXT_LAST_N_DAYS', 30)
 
 # Performance settings
 MAX_WORKERS = 200  # Maximum parallel workers (increased from 100)
@@ -212,9 +213,9 @@ def sync_attendance_data(date_range=None):
             # Date range info will be logged at the end
             print(f"📅 Syncing date range: {start_date_str} to {end_date_str}")
         else:
-            # Use last 7 days (current date and 6 days before)
+            # Use configured default days (from SYNC_LOG_FROM_MONGODB_TO_ERPNEXT_LAST_N_DAYS)
             current_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            start_date = current_date - timedelta(days=6)  # 7 days total including today
+            start_date = current_date - timedelta(days=DEFAULT_SYNC_DAYS - 1)  # -1 to include today
             end_date = current_date.replace(hour=23, minute=59, second=59)
 
             query = {
@@ -224,7 +225,7 @@ def sync_attendance_data(date_range=None):
                 }
             }
 
-            print(f"📅 Syncing: last 7 days")
+            print(f"📅 Syncing: last {DEFAULT_SYNC_DAYS} days (from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})")
 
         # Add machineNo filter if configured
         if sync_only_machines_0:
@@ -286,7 +287,9 @@ def sync_attendance_data(date_range=None):
         if date_range and isinstance(date_range, list) and len(date_range) == 2:
             date_info = f"From {date_range[0]} to {date_range[1]}"
         else:
-            date_info = "Last 7 days"
+            start_date_formatted = start_date.strftime('%Y-%m-%d')
+            end_date_formatted = end_date.strftime('%Y-%m-%d')
+            date_info = f"Last {DEFAULT_SYNC_DAYS} days ({start_date_formatted} to {end_date_formatted})"
 
         filter_info = f"machineNo=0" if sync_only_machines_0 else "All machines"
 
@@ -335,7 +338,7 @@ def main():
             date_range = prompt_date_range(
                 prompt_message="Sync Attendance Data from MongoDB to ERPNext",
                 allow_empty=True,
-                default_days_back=7
+                default_days_back=DEFAULT_SYNC_DAYS
             )
             if not date_range:
                 print("Operation cancelled")

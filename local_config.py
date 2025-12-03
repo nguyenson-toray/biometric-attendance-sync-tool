@@ -81,7 +81,8 @@ SYNC_CHANGED_HOURS_BACK = 24
 # MongoDB sync feature toggle
 ENABLE_SYNC_LOG_FROM_MONGODB_TO_ERPNEXT = True
 sync_only_machines_0 = True  # If True, only sync from devices 0 ( add machineNo: 0 to MongoDB query filter)
-# Note: sync_log_from_mongodb_to_erpnext_date_range removed - defaults to last 7 days in AUTO mode, prompted in MANUAL mode
+SYNC_LOG_FROM_MONGODB_TO_ERPNEXT_LAST_N_DAYS = 30  # Used in AUTO mode when no date range is provided
+# Note: sync_log_from_mongodb_to_erpnext_date_range removed - defaults to last 30 days in AUTO mode, prompted in MANUAL mode
 
 # MongoDB OT sync configuration
 ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT = True
