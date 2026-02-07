@@ -33,7 +33,7 @@ LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
 # 1. IMPORT_START_DATE = '20251126'  → Sync logs from Nov 26, 2025 onwards
 # 2. IMPORT_START_DATE = '' or None or undefined    → Default to TODAY (00:00:00)
 
-IMPORT_START_DATE = '20251126'  # Current: Nov 26, 2025 - Keep this for safety
+IMPORT_START_DATE = '20260204'  # Current: Nov 26, 2025 - Keep this for safety
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
     #- ip - device IP Address
