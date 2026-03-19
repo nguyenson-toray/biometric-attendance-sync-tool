@@ -33,7 +33,7 @@ LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
 # 1. IMPORT_START_DATE = '20251126'  → Sync logs from Nov 26, 2025 onwards
 # 2. IMPORT_START_DATE = '' or None or undefined    → Default to TODAY (00:00:00)
 
-IMPORT_START_DATE = '20260204'  # Current: Nov 26, 2025 - Keep this for safety
+IMPORT_START_DATE = '20260319'  # Current: Nov 26, 2025 - Keep this for safety
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
     #- ip - device IP Address
@@ -60,19 +60,19 @@ user_id_inorged = ['55','58','161','623','916','920','3000','3001','3002','6004'
 ENABLE_SYNC_USER_INFO_FROM_ERPNEXT_TO_DEVICE = False
 
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_DEVICES = False  # Clear fingerprint templates from devices (once per day)
-CLEAR_LEFT_USER_TEMPLATES_ON_DATE_OF_MONTH = [10] # Days of month to run clearing (e.g., [10,25] = run on 10th and 25th of each month; [] = every day)
-CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 46  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
+CLEAR_LEFT_USER_TEMPLATES_ON_DATE_OF_MONTH = [6] # Days of month to run clearing (e.g., [10,25] = run on 10th and 25th of each month; [] = every day)
+CLEAR_LEFT_USER_TEMPLATES_RELIEVING_DELAY_DAYS = 31  # Wait N days after relieving_date before clearing templates (0 = disabled, no template clearing)
 ENABLE_CLEAR_LEFT_USER_TEMPLATES_ON_ERPNEXT = False  # Delete fingerprint records from ERPNext database (keep False)
-ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 76  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
+ENABLE_DELETE_LEFT_USER_ON_DEVICES_AFTER_RELIEVING_DAYS = 60  # Permanently delete user from devices after N days since relieving_date (0 = disabled, checked FIRST before clear templates)
 CLEAR_LEFT_USER_TEMPLATES_LOG_FILE = 'logs/clear_left_templates.log'  # Dedicated log file
 PROCESSED_LEFT_EMPLOYEES_FILE = 'logs/clean_data_employee_left/processed_left_employees.json'  # Tracking file for processed employees (skip on subsequent runs)
 
 # Log cleanup configuration
-CLEAN_OLD_LOGS_DAYS = 5  # Clean logs older than N days (0 = disabled)
+CLEAN_OLD_LOGS_DAYS = 3  # Clean logs older than N days (0 = disabled)
 
 # Log rotation configuration
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10MB per log file
-LOG_BACKUP_COUNT = 5  # Keep only 5 backup files (reduced from 50 to save disk space)
+LOG_BACKUP_COUNT = 3  # Keep only 5 backup files (reduced from 50 to save disk space)
                       # Total per log type: (5+1) files × 10MB = 60MB max
 
 SYNC_USER_INFO_MODE = 'auto'  # 'full', 'changed', 'auto'
@@ -338,3 +338,52 @@ def get_finger_name(finger_index):
         9: "Right Little"
     }
     return finger_names.get(finger_index, f"Finger {finger_index}")
+
+
+# =============================================================================
+# ERROR REPORT EMAIL SETTINGS
+# =============================================================================
+ENABLE_ERROR_REPORT_EMAIL = True
+ERROR_REPORT_RECIPIENTS = ["son.nt@tiqn.com.vn", "vinh.nt@tiqn.com.vn"]
+ERROR_REPORT_COOLDOWN_MINUTES = 30   # Không gửi lặp lại trong vòng N phút
+ERROR_REPORT_MARKER_FILE = 'logs/.last_error_report_sent'  # Lưu datetime lần gửi cuối
+
+
+def get_last_error_report_sent():
+    """Lấy datetime lần gửi error report cuối cùng. Trả về None nếu chưa gửi."""
+    import os
+    marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), ERROR_REPORT_MARKER_FILE)
+    if os.path.exists(marker):
+        try:
+            with open(marker, 'r') as f:
+                return datetime.datetime.fromisoformat(f.read().strip())
+        except Exception:
+            return None
+    return None
+
+
+def set_last_error_report_sent(dt=None):
+    """Ghi datetime lần gửi error report. Mặc định là now()."""
+    import os
+    if dt is None:
+        dt = datetime.datetime.now()
+    marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), ERROR_REPORT_MARKER_FILE)
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    with open(marker, 'w') as f:
+        f.write(dt.isoformat())
+
+
+def should_send_error_report():
+    """Kiểm tra có nên gửi error report không.
+
+    Điều kiện:
+    1. ENABLE_ERROR_REPORT_EMAIL = True
+    2. Chưa gửi hoặc đã qua ERROR_REPORT_COOLDOWN_MINUTES phút kể từ lần gửi cuối
+    """
+    if not ENABLE_ERROR_REPORT_EMAIL:
+        return False
+    last_sent = get_last_error_report_sent()
+    if last_sent is None:
+        return True
+    elapsed = (datetime.datetime.now() - last_sent).total_seconds() / 60
+    return elapsed >= ERROR_REPORT_COOLDOWN_MINUTES

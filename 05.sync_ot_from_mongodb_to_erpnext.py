@@ -73,7 +73,8 @@ class OTSyncFromMongoDB:
 
         Args:
             start_date (str): Optional start date in YYYYMMDD format.
-                            Defaults to today if not provided.
+                            If provided (manual mode), filter by otDate >= start_date.
+                            If not provided (auto mode), only filter by _id > last_synced_id.
         """
         self.erpnext_url = local_config.ERPNEXT_URL
         self.api_key = local_config.ERPNEXT_API_KEY
@@ -84,13 +85,11 @@ class OTSyncFromMongoDB:
         self.mongodb_db = getattr(local_config, 'MONGODB_DATABASE', 'tiqn')
         self.mongodb_collection = getattr(local_config, 'MONGODB_OT_COLLECTION', 'OtRegister')
 
-        # Sync configuration - use parameter or default to today
-        if start_date:
-            self.start_date = start_date
-        else:
-            # Default to today
-            self.start_date = datetime.now().strftime('%Y%m%d')
-            # logger.info(f"No start_date provided, defaulting to today: {self.start_date}")
+        # Sync configuration
+        # manual_mode = True khi có start_date (chạy --manual)
+        # auto_mode = False khi không có start_date (chạy cron)
+        self.manual_mode = start_date is not None
+        self.start_date = start_date  # None nếu auto mode
 
         self.last_id_file = os.path.join(log_dir, 'last_synced_ot_id.txt')
 
@@ -146,27 +145,35 @@ class OTSyncFromMongoDB:
     def fetch_ot_records_from_mongodb(self):
         """Fetch OT records from MongoDB
 
+        Auto mode (cron): chỉ filter _id > last_synced_id, không filter ngày
+        Manual mode (--manual): filter otDate >= start_date + _id > last_synced_id
+
         Returns:
             list: List of OT records grouped by requestNo
         """
         try:
-            # Convert start_date to datetime
-            start_date_dt = datetime.strptime(self.start_date, '%Y%m%d')
-
             # Build query
-            query = {
-                'otDate': {'$gte': start_date_dt}
-            }
+            # Auto mode (cron): chỉ filter _id > last_synced_id
+            # Manual mode (--manual): chỉ filter otDate >= start_date
+            query = {}
 
-            # Add _id filter if we have last synced ID
-            last_id = self.get_last_synced_id()
-            if last_id:
-                query['_id'] = {'$gt': last_id}
+            if self.manual_mode and self.start_date:
+                # Manual mode: chỉ filter theo ngày, không check _id
+                start_date_dt = datetime.strptime(self.start_date, '%Y%m%d')
+                query['otDate'] = {'$gte': start_date_dt}
+            else:
+                # Auto mode: chỉ filter _id > last_synced_id, không filter ngày
+                last_id = self.get_last_synced_id()
+                if last_id:
+                    query['_id'] = {'$gt': last_id}
 
             # Build filter description
-            filter_info = f"otDate >= {self.start_date}"
-            if last_id:
-                filter_info += f" & _id > {last_id}"
+            filter_parts = []
+            if 'otDate' in query:
+                filter_parts.append(f"otDate >= {self.start_date}")
+            if '_id' in query:
+                filter_parts.append(f"_id > {last_id}")
+            filter_info = " & ".join(filter_parts) if filter_parts else "no filters"
 
             # Fetch records sorted by _id
             cursor = self.collection.find(query).sort('_id', 1)
@@ -274,7 +281,7 @@ class OTSyncFromMongoDB:
         return dict(grouped)
 
     def check_ot_registration_exists(self, request_no):
-        """Check if Overtime Registration already exists in ERPNext
+        """Check if Overtime Registration already exists in ERPNext by querying reason_general field
 
         Args:
             request_no (str): Request number to check
@@ -283,10 +290,19 @@ class OTSyncFromMongoDB:
             bool: True if exists, False otherwise
         """
         try:
-            url = f"{self.erpnext_url}/api/resource/Overtime Registration/{request_no}"
+            url = f"{self.erpnext_url}/api/resource/Overtime Registration"
+
+            params = {
+                'filters': json.dumps([
+                    ['reason_general', 'like', f'%Request number: {request_no}%']
+                ]),
+                'fields': json.dumps(['name']),
+                'limit': 1
+            }
 
             response = requests.get(
                 url,
+                params=params,
                 headers={
                     'Authorization': f'token {self.api_key}:{self.api_secret}',
                     'Content-Type': 'application/json'
@@ -294,7 +310,11 @@ class OTSyncFromMongoDB:
                 timeout=10
             )
 
-            return response.status_code == 200
+            if response.status_code == 200:
+                data = response.json()
+                return len(data.get('data', [])) > 0
+
+            return False
 
         except Exception as e:
             logger.debug(f"Check OT registration {request_no}: {str(e)}")
@@ -461,9 +481,7 @@ class OTSyncFromMongoDB:
             # Prepare Overtime Registration document
             doc = {
                 'doctype': 'Overtime Registration',
-                'name': request_no,
                 'reason_general': f'Sync from MongoDB: Request number: {request_no}',
-                'naming_series': 'OTR-.YY..MM..DD.-.####.',
                 'request_date': request_date,
                 'ot_employees': ot_employees
             }
@@ -622,8 +640,8 @@ class OTSyncFromMongoDB:
                         'reason': result.get('message')
                     })
 
-            # Save last synced ID
-            if records:
+            # Save last synced ID only if at least one request was created or skipped (not all failed)
+            if records and (created_count > 0 or skipped_exists_count > 0 or skipped_conflict_count > 0):
                 last_id = max(r['_id'] for r in records)
                 self.save_last_synced_id(last_id)
 

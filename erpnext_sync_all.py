@@ -182,6 +182,22 @@ class ERPNextSyncService:
             print(f"Error checking clean logs status: {e}")
             return False
 
+    def execute_error_report(self):
+        """Rà soát log lỗi và gửi email nếu có lỗi (cooldown 30 phút)"""
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("send_error_report",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "06.send_error_report.py"))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            result = module.run()
+            if result['sent']:
+                print(f"[{datetime.datetime.now()}] Error report: sent {result['error_count']} errors via email")
+            return True
+        except Exception as e:
+            print(f"[{datetime.datetime.now()}] Error report failed: {e}")
+            return False
+
     def execute_clean_logs(self):
         """Execute old log files cleanup (once per day)"""
         try:
@@ -238,6 +254,12 @@ class ERPNextSyncService:
         if getattr(local_config, 'ENABLE_SYNC_OT_FROM_MONGODB_TO_ERPNEXT', False):
             local_config.log_operation_decision("OT MongoDB Sync", True, "End of cycle")
             self.execute_ot_mongodb_sync()
+
+        # Error report email (nếu có lỗi và cooldown đã hết)
+        if getattr(local_config, 'ENABLE_ERROR_REPORT_EMAIL', False):
+            if local_config.should_send_error_report():
+                local_config.log_operation_decision("Error Report Email", True, "Checking logs")
+                self.execute_error_report()
 
         cycle_duration = (datetime.datetime.now() - cycle_start).total_seconds()
 
