@@ -1,5 +1,7 @@
 import local_config as config
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import datetime
 import json
 import csv
@@ -370,7 +372,7 @@ def send_to_erpnext(employee_field_value, timestamp, device_id=None, log_type=No
         'latitude' : latitude,
         'longitude' : longitude
     }
-    response = requests.request("POST", url, headers=headers, json=data)
+    response = requests.request("POST", url, headers=headers, json=data, verify=False)
     if response.status_code == 200:
         return 200, json.loads(response._content)['message']['name']
     else:
@@ -428,7 +430,7 @@ def send_shift_sync_to_erpnext(shift_type_name, sync_timestamp):
         "last_sync_of_checkin" : str(sync_timestamp)
     }
     try:
-        response = requests.request("PUT", url, headers=headers, data=json.dumps(data))
+        response = requests.request("PUT", url, headers=headers, data=json.dumps(data), verify=False)
         if response.status_code == 200:
             info_logger.info("\t".join(['Shift Type last_sync_of_checkin Updated', str(shift_type_name), str(sync_timestamp.timestamp())]))
         else:

@@ -17,7 +17,7 @@ ERPNEXT_API_SECRET = '5df993705d12dd4'
 # ERPNEXT_API_KEY = '30a5bc81106bdf9'
 # ERPNEXT_API_SECRET = 'c6345b4905ce725' 
 
-ERPNEXT_URL = f'http://{SERVER_NAME}'
+ERPNEXT_URL = f'https://{SERVER_NAME}:8888'
 
 
 
@@ -33,7 +33,7 @@ LOGS_DIRECTORY = 'logs' # logs of this script is stored in this directory
 # 1. IMPORT_START_DATE = '20251126'  → Sync logs from Nov 26, 2025 onwards
 # 2. IMPORT_START_DATE = '' or None or undefined    → Default to TODAY (00:00:00)
 
-IMPORT_START_DATE = '20260319'  # Current: Nov 26, 2025 - Keep this for safety
+IMPORT_START_DATE = '20260320'  # Current: Nov 26, 2025 - Keep this for safety
 # Biometric device configs (all keys mandatory, except latitude and longitude they are mandatory only if 'Allow Geolocation Tracking' is turned on in Frappe HR)
     #- device_id - must be unique, strictly alphanumerical chars only. no space allowed.
     #- ip - device IP Address
@@ -345,7 +345,7 @@ def get_finger_name(finger_index):
 # =============================================================================
 ENABLE_ERROR_REPORT_EMAIL = True
 ERROR_REPORT_RECIPIENTS = ["son.nt@tiqn.com.vn", "vinh.nt@tiqn.com.vn"]
-ERROR_REPORT_COOLDOWN_MINUTES = 30   # Không gửi lặp lại trong vòng N phút
+ERROR_REPORT_COOLDOWN_MINUTES = 30   # Giới hạn tần suất: tối đa 1 email mỗi N phút (rate limiting)
 ERROR_REPORT_MARKER_FILE = 'logs/.last_error_report_sent'  # Lưu datetime lần gửi cuối
 
 
