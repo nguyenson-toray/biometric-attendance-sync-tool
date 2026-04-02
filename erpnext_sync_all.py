@@ -192,7 +192,7 @@ class ERPNextSyncService:
             spec.loader.exec_module(module)
             result = module.run()
             if result['sent']:
-                print(f"[{datetime.datetime.now()}] Error report: sent {result['error_count']} errors via email")
+                print(f"[{datetime.datetime.now()}] Error report: sent {result['new_errors']} errors via email")
             return True
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Error report failed: {e}")

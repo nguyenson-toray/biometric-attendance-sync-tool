@@ -307,7 +307,8 @@ class OTSyncFromMongoDB:
                     'Authorization': f'token {self.api_key}:{self.api_secret}',
                     'Content-Type': 'application/json'
                 },
-                timeout=10
+                timeout=10,
+                verify=local_config.VERIFY_SSL
             )
 
             if response.status_code == 200:
@@ -351,7 +352,8 @@ class OTSyncFromMongoDB:
                     'Authorization': f'token {self.api_key}:{self.api_secret}',
                     'Content-Type': 'application/json'
                 },
-                timeout=10
+                timeout=10,
+                verify=local_config.VERIFY_SSL
             )
 
             if response.status_code == 200:
@@ -496,7 +498,8 @@ class OTSyncFromMongoDB:
                     'Content-Type': 'application/json'
                 },
                 json=doc,
-                timeout=30
+                timeout=30,
+                verify=local_config.VERIFY_SSL
             )
 
             if response.status_code in [200, 201]:

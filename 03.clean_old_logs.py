@@ -197,38 +197,43 @@ def clean_log_file(log_file_path, cutoff_date, dry_run=False):
         }
 
 
-def delete_empty_rotated_logs(logs_directory, dry_run=False):
-    """Delete empty rotated log files (*.log.1, *.log.2, etc.)
+def delete_empty_rotated_logs(logs_directory, dry_run=False, cutoff_date=None):
+    """Delete rotated log files (*.log.1, *.log.2, etc.) that are empty or older than cutoff_date
 
     Args:
         logs_directory (str): Path to logs directory
         dry_run (bool): If True, only show what would be deleted
+        cutoff_date (datetime.date): Also delete non-empty files last modified before this date
 
     Returns:
         list: List of deleted files
     """
     deleted_files = []
 
-    # Find all rotated log files (*.log.1, *.log.2, etc.)
     pattern = os.path.join(logs_directory, '**', '*.log.*')
     rotated_logs = glob.glob(pattern, recursive=True)
 
     for log_file in rotated_logs:
-        # Check if it's a numbered rotation (e.g., error.log.1, not error.log.gz)
-        if re.match(r'.*\.log\.\d+$', log_file):
-            try:
-                file_size = os.path.getsize(log_file)
+        if not re.match(r'.*\.log\.\d+$', log_file):
+            continue
+        try:
+            file_size = os.path.getsize(log_file)
+            mtime = datetime.date.fromtimestamp(os.path.getmtime(log_file))
 
-                if file_size == 0:
-                    if not dry_run:
-                        os.remove(log_file)
-                    deleted_files.append({
-                        "file": log_file,
-                        "size": file_size,
-                        "reason": "empty"
-                    })
-            except Exception as e:
-                print(f"Error processing {log_file}: {e}")
+            is_empty = file_size == 0
+            is_old = cutoff_date is not None and mtime < cutoff_date
+
+            if is_empty or is_old:
+                if not dry_run:
+                    os.remove(log_file)
+                reason = "empty" if is_empty else f"old (modified {mtime})"
+                deleted_files.append({
+                    "file": log_file,
+                    "size": file_size,
+                    "reason": reason
+                })
+        except Exception as e:
+            print(f"Error processing {log_file}: {e}")
 
     return deleted_files
 
@@ -308,7 +313,7 @@ def run_cleanup(dry_run=False, force=False):
     print("Deleting empty rotated log files...")
     print("-" * 80)
 
-    deleted_files = delete_empty_rotated_logs(local_config.LOGS_DIRECTORY, dry_run)
+    deleted_files = delete_empty_rotated_logs(local_config.LOGS_DIRECTORY, dry_run, cutoff_date=cutoff_date)
 
     if deleted_files:
         for deleted in deleted_files:

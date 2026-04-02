@@ -17,7 +17,8 @@ class ERPNextAPIClient:
         self.api_key = api_key
         self.api_secret = api_secret
         self.session = requests.Session()
-        
+        self.session.verify = False
+
         self.session.headers.update({
             'Authorization': f'token {api_key}:{api_secret}',
             'Content-Type': 'application/json',

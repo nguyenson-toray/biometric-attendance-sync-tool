@@ -160,7 +160,8 @@ def send_report(errors, after_dt):
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        verify_ssl = getattr(config, 'VERIFY_SSL', True)
+        response = requests.post(url, json=payload, headers=headers, timeout=30, verify=verify_ssl)
         response.raise_for_status()
         result = response.json()
         if result.get('message', {}).get('status') == 'ok':
