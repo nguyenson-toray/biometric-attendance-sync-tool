@@ -115,7 +115,19 @@ def pull_process_and_push_data(device, device_attendance_logs=None):
         if not device_attendance_logs:
             info_logger.info(f"No attendance logs found on device {device['device_id']}")
             return
-    
+
+    # Skip invalid logs (uid == 0 or empty user_id)
+    valid_logs = []
+    for log in device_attendance_logs:
+        if log.get('uid') == 0 or str(log.get('user_id', '')).strip() == '':
+            error_logger.error(f"Skipped invalid log from device {device['device_id']}: {json.dumps(log, default=str)}")
+            continue
+        valid_logs.append(log)
+    device_attendance_logs = valid_logs
+    if not device_attendance_logs:
+        info_logger.info(f"No valid attendance logs to process for device {device['device_id']}")
+        return
+
     # Sort logs by timestamp to ensure proper processing order
     device_attendance_logs.sort(key=lambda x: x['timestamp'])
     # Log will be combined with processing status later
